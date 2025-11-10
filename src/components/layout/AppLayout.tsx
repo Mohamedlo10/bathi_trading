@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Home, Package, Users, Box, DollarSign, Globe, ChevronRight, LogOut, Image } from "lucide-react";
+import { Home, Package, Users, Box, DollarSign, Globe, ChevronRight, LogOut, Image, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -15,8 +15,7 @@ const mainRoutes = [
   { path: "/containers", label: "Conteneurs", icon: Package },
   { path: "/clients", label: "Clients", icon: Users },
   { path: "/colis", label: "Colis", icon: Box },
-  { path: "/cbm", label: "Tarifs", icon: DollarSign },
-  { path: "/pays", label: "Pays", icon: Globe },
+  { path: "/settings", label: "Paramètres", icon: Settings },
 ];
 
 // Configuration des labels pour le breadcrumb dynamique

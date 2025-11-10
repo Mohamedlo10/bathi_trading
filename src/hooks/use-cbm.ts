@@ -12,7 +12,10 @@ export const useCBM = () => {
 
   // Récupérer tous les tarifs CBM
   const fetchTarifs = async (filters?: CBMFilters) => {
-    if (!user?.auth_uid) return;
+    if (!user?.auth_uid) {
+      setTarifs([]);
+      return;
+    }
     
     setLoading(true);
     setError(null);
@@ -20,13 +23,17 @@ export const useCBM = () => {
       const result = await cbmService.getCBMList(user.auth_uid, filters);
       if (result.error) {
         setError(result.error);
+        setTarifs([]);
         toast.error("Erreur", { description: result.error });
       } else {
-        setTarifs(result.data || []);
+        // S'assurer que result.data est toujours un tableau
+        const dataArray = Array.isArray(result.data) ? result.data : [];
+        setTarifs(dataArray);
       }
     } catch (err: any) {
       const errorMsg = err.message || "Erreur lors du chargement des tarifs";
       setError(errorMsg);
+      setTarifs([]);
       toast.error("Erreur", { description: errorMsg });
     } finally {
       setLoading(false);

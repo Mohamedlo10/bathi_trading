@@ -28,13 +28,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -48,7 +41,6 @@ import {
   Calendar,
 } from "lucide-react";
 import { useCBM } from "@/hooks/use-cbm";
-import { usePays } from "@/hooks/use-pays";
 import { toast } from "sonner";
 import { CBM } from "@/types/cbm";
 import { format } from "date-fns";
@@ -56,17 +48,15 @@ import { fr } from "date-fns/locale";
 
 const TarifsManagement = () => {
   const { tarifs, loading, fetchTarifs, createTarif, updateTarif, deleteTarif } = useCBM();
-  const { pays, loading: loadingPays } = usePays();
   const [showDialog, setShowDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [editingTarif, setEditingTarif] = useState<CBM | null>(null);
   const [deletingTarif, setDeletingTarif] = useState<CBM | null>(null);
   const [formData, setFormData] = useState({
-    pays_id: "",
-    prix_par_cbm: "",
+    prix_cbm: "",
     date_debut_validite: "",
     date_fin_validite: "",
-    actif: true,
+    is_valid: true,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -79,20 +69,18 @@ const TarifsManagement = () => {
     if (tarifToEdit) {
       setEditingTarif(tarifToEdit);
       setFormData({
-        pays_id: tarifToEdit.pays_id.toString(),
-        prix_par_cbm: tarifToEdit.prix_par_cbm.toString(),
+        prix_cbm: tarifToEdit.prix_cbm.toString(),
         date_debut_validite: tarifToEdit.date_debut_validite,
         date_fin_validite: tarifToEdit.date_fin_validite || "",
-        actif: tarifToEdit.actif,
+        is_valid: tarifToEdit.is_valid,
       });
     } else {
       setEditingTarif(null);
       setFormData({
-        pays_id: "",
-        prix_par_cbm: "",
+        prix_cbm: "",
         date_debut_validite: "",
         date_fin_validite: "",
-        actif: true,
+        is_valid: true,
       });
     }
     setErrors({});
@@ -103,11 +91,10 @@ const TarifsManagement = () => {
     setShowDialog(false);
     setEditingTarif(null);
     setFormData({
-      pays_id: "",
-      prix_par_cbm: "",
+      prix_cbm: "",
       date_debut_validite: "",
       date_fin_validite: "",
-      actif: true,
+      is_valid: true,
     });
     setErrors({});
   };
@@ -115,11 +102,8 @@ const TarifsManagement = () => {
   const validate = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.pays_id) {
-      newErrors.pays_id = "Le pays est requis";
-    }
-    if (!formData.prix_par_cbm || parseFloat(formData.prix_par_cbm) <= 0) {
-      newErrors.prix_par_cbm = "Le prix doit être supérieur à 0";
+    if (!formData.prix_cbm || parseFloat(formData.prix_cbm) <= 0) {
+      newErrors.prix_cbm = "Le prix doit être supérieur à 0";
     }
     if (!formData.date_debut_validite) {
       newErrors.date_debut_validite = "La date de début est requise";
@@ -144,11 +128,10 @@ const TarifsManagement = () => {
     setIsSaving(true);
 
     const data = {
-      pays_id: parseInt(formData.pays_id),
-      prix_par_cbm: parseFloat(formData.prix_par_cbm),
+      prix_cbm: parseFloat(formData.prix_cbm),
       date_debut_validite: formData.date_debut_validite,
       date_fin_validite: formData.date_fin_validite || undefined,
-      actif: formData.actif,
+      is_valid: formData.is_valid,
     };
 
     let result;
@@ -179,14 +162,10 @@ const TarifsManagement = () => {
   };
 
   const handleToggleActif = async (tarif: CBM) => {
-    const result = await updateTarif(tarif.id, { actif: !tarif.actif });
+    const result = await updateTarif(tarif.id, { is_valid: !tarif.is_valid });
     if (result) {
-      toast.success(tarif.actif ? "Tarif désactivé" : "Tarif activé");
+      toast.success(tarif.is_valid ? "Tarif désactivé" : "Tarif activé");
     }
-  };
-
-  const getPaysName = (paysId: number) => {
-    return pays.find((p) => p.id === paysId)?.nom || "—";
   };
 
   return (
@@ -204,7 +183,6 @@ const TarifsManagement = () => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Pays</TableHead>
               <TableHead>Prix / CBM</TableHead>
               <TableHead>Date début</TableHead>
               <TableHead>Date fin</TableHead>
@@ -213,15 +191,15 @@ const TarifsManagement = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading || loadingPays ? (
+            {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8">
+                <TableCell colSpan={5} className="text-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />
                 </TableCell>
               </TableRow>
             ) : tarifs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                   <DollarSign className="w-12 h-12 mx-auto mb-2 opacity-50" />
                   <p>Aucun tarif trouvé</p>
                 </TableCell>
@@ -229,12 +207,9 @@ const TarifsManagement = () => {
             ) : (
               tarifs.map((tarif) => (
                 <TableRow key={tarif.id}>
-                  <TableCell className="font-medium">
-                    {getPaysName(tarif.pays_id)}
-                  </TableCell>
                   <TableCell>
                     <span className="font-mono font-semibold text-primary">
-                      {tarif.prix_par_cbm.toLocaleString()} FCFA
+                      {tarif.prix_cbm.toLocaleString()} FCFA
                     </span>
                   </TableCell>
                   <TableCell>
@@ -256,10 +231,10 @@ const TarifsManagement = () => {
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <Switch
-                        checked={tarif.actif}
+                        checked={tarif.is_valid}
                         onCheckedChange={() => handleToggleActif(tarif)}
                       />
-                      {tarif.actif ? (
+                      {tarif.is_valid ? (
                         <Badge variant="default" className="gap-1">
                           <CheckCircle2 className="w-3 h-3" />
                           Actif
@@ -316,51 +291,24 @@ const TarifsManagement = () => {
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="pays_id">
-                Pays <span className="text-destructive">*</span>
-              </Label>
-              <Select
-                value={formData.pays_id}
-                onValueChange={(value) => {
-                  setFormData({ ...formData, pays_id: value });
-                  if (errors.pays_id) setErrors({ ...errors, pays_id: "" });
-                }}
-              >
-                <SelectTrigger className={errors.pays_id ? "border-destructive" : ""}>
-                  <SelectValue placeholder="Sélectionner un pays" />
-                </SelectTrigger>
-                <SelectContent className="bg-white">
-                  {pays.map((p) => (
-                    <SelectItem key={p.id} value={p.id.toString()}>
-                      {p.nom}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.pays_id && (
-                <p className="text-sm text-destructive">{errors.pays_id}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="prix_par_cbm">
+              <Label htmlFor="prix_cbm">
                 Prix par CBM (FCFA) <span className="text-destructive">*</span>
               </Label>
               <Input
-                id="prix_par_cbm"
+                id="prix_cbm"
                 type="number"
-                value={formData.prix_par_cbm}
+                value={formData.prix_cbm}
                 onChange={(e) => {
-                  setFormData({ ...formData, prix_par_cbm: e.target.value });
-                  if (errors.prix_par_cbm) setErrors({ ...errors, prix_par_cbm: "" });
+                  setFormData({ ...formData, prix_cbm: e.target.value });
+                  if (errors.prix_cbm) setErrors({ ...errors, prix_cbm: "" });
                 }}
                 placeholder="Ex: 25000"
                 min="0"
                 step="1000"
-                className={errors.prix_par_cbm ? "border-destructive" : ""}
+                className={errors.prix_cbm ? "border-destructive" : ""}
               />
-              {errors.prix_par_cbm && (
-                <p className="text-sm text-destructive">{errors.prix_par_cbm}</p>
+              {errors.prix_cbm && (
+                <p className="text-sm text-destructive">{errors.prix_cbm}</p>
               )}
             </div>
 
@@ -407,12 +355,12 @@ const TarifsManagement = () => {
             </div>
 
             <div className="flex items-center justify-between">
-              <Label htmlFor="actif">Tarif actif</Label>
+              <Label htmlFor="is_valid">Tarif actif</Label>
               <Switch
-                id="actif"
-                checked={formData.actif}
+                id="is_valid"
+                checked={formData.is_valid}
                 onCheckedChange={(checked) =>
-                  setFormData({ ...formData, actif: checked })
+                  setFormData({ ...formData, is_valid: checked })
                 }
               />
             </div>

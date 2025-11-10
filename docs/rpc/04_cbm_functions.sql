@@ -8,8 +8,7 @@
 -- =====================================================
 CREATE OR REPLACE FUNCTION get_cbm_list(
   p_auth_uid UUID,
-  p_pays_id INTEGER DEFAULT NULL,
-  p_actif BOOLEAN DEFAULT NULL,
+  p_is_valid BOOLEAN DEFAULT NULL,
   p_date_validite DATE DEFAULT NULL
 )
 RETURNS JSON AS $$
@@ -27,42 +26,25 @@ BEGIN
     );
   END IF;
 
-  -- Récupérer les tarifs CBM
-  SELECT json_agg(
+  -- Récupérer les items avec filtres
+  SELECT COALESCE(json_agg(
     json_build_object(
       'id', c.id,
-      'pays_id', c.pays_id,
-      'prix_par_cbm', c.prix_par_cbm,
+      'prix_cbm', c.prix_cbm,
       'date_debut_validite', c.date_debut_validite,
       'date_fin_validite', c.date_fin_validite,
-      'actif', c.actif,
-      'created_at', c.created_at,
-      'updated_at', c.updated_at,
-      'pays', CASE 
-        WHEN p.id IS NOT NULL THEN json_build_object(
-          'id', p.id,
-          'nom', p.nom,
-          'code_iso', p.code_iso
-        )
-        ELSE NULL
-      END
+      'is_valid', c.is_valid,
+      'created_at', c.created_at
     ) ORDER BY c.created_at DESC
-  ) INTO v_items
+  ), '[]'::json) INTO v_items
   FROM cbm c
-  LEFT JOIN pays p ON p.id = c.pays_id
-  WHERE 
-    (p_pays_id IS NULL OR c.pays_id = p_pays_id)
-    AND (p_actif IS NULL OR c.actif = p_actif)
-    AND (
-      p_date_validite IS NULL 
-      OR (
-        c.date_debut_validite <= p_date_validite 
-        AND (c.date_fin_validite IS NULL OR c.date_fin_validite >= p_date_validite)
-      )
-    );
+  WHERE (p_is_valid IS NULL OR c.is_valid = p_is_valid)
+    AND (p_date_validite IS NULL OR 
+         (c.date_debut_validite <= p_date_validite AND 
+          (c.date_fin_validite IS NULL OR c.date_fin_validite >= p_date_validite)));
 
   RETURN json_build_object(
-    'data', COALESCE(v_items, '[]'::json),
+    'data', v_items,
     'error', NULL
   );
 END;
@@ -91,33 +73,74 @@ BEGIN
     );
   END IF;
 
-  -- Récupérer le tarif CBM
+  -- Vérifier que le CBM existe
+  IF NOT EXISTS (
+    SELECT 1 FROM cbm WHERE id = p_cbm_id
+  ) THEN
+    RETURN json_build_object(
+      'data', NULL,
+      'error', 'Tarif CBM non trouvé'
+    );
+  END IF;
+
+  -- Récupérer le CBM
   SELECT json_build_object(
     'id', c.id,
-    'pays_id', c.pays_id,
-    'prix_par_cbm', c.prix_par_cbm,
+    'prix_cbm', c.prix_cbm,
     'date_debut_validite', c.date_debut_validite,
     'date_fin_validite', c.date_fin_validite,
-    'actif', c.actif,
-    'created_at', c.created_at,
-    'updated_at', c.updated_at,
-    'pays', CASE 
-      WHEN p.id IS NOT NULL THEN json_build_object(
-        'id', p.id,
-        'nom', p.nom,
-        'code_iso', p.code_iso
-      )
-      ELSE NULL
-    END
+    'is_valid', c.is_valid,
+    'created_at', c.created_at
   ) INTO v_result
   FROM cbm c
-  LEFT JOIN pays p ON p.id = c.pays_id
   WHERE c.id = p_cbm_id;
+
+  RETURN json_build_object(
+    'data', v_result,
+    'error', NULL
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =====================================================
+-- FUNCTION: get_current_cbm
+-- Description: Récupère le tarif CBM actuellement valide
+-- =====================================================
+CREATE OR REPLACE FUNCTION get_current_cbm(
+  p_auth_uid UUID
+)
+RETURNS JSON AS $$
+DECLARE
+  v_result JSON;
+BEGIN
+  -- Vérifier que l'utilisateur existe et est actif
+  IF NOT EXISTS (
+    SELECT 1 FROM users 
+    WHERE auth_uid = p_auth_uid AND active = true
+  ) THEN
+    RETURN json_build_object(
+      'data', NULL,
+      'error', 'Utilisateur non autorisé'
+    );
+  END IF;
+
+  -- Récupérer le CBM valide
+  SELECT json_build_object(
+    'id', c.id,
+    'prix_cbm', c.prix_cbm,
+    'date_debut_validite', c.date_debut_validite,
+    'date_fin_validite', c.date_fin_validite,
+    'is_valid', c.is_valid,
+    'created_at', c.created_at
+  ) INTO v_result
+  FROM cbm c
+  WHERE c.is_valid = true
+  LIMIT 1;
 
   IF v_result IS NULL THEN
     RETURN json_build_object(
       'data', NULL,
-      'error', 'Tarif CBM non trouvé'
+      'error', 'Aucun tarif CBM valide trouvé'
     );
   END IF;
 
@@ -134,11 +157,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- =====================================================
 CREATE OR REPLACE FUNCTION create_cbm(
   p_auth_uid UUID,
-  p_pays_id INTEGER,
-  p_prix_par_cbm DECIMAL,
-  p_date_debut_validite DATE,
-  p_date_fin_validite DATE DEFAULT NULL,
-  p_actif BOOLEAN DEFAULT true
+  p_prix_cbm DECIMAL,
+  p_date_debut_validite DATE DEFAULT CURRENT_DATE,
+  p_is_valid BOOLEAN DEFAULT false
 )
 RETURNS JSON AS $$
 DECLARE
@@ -158,64 +179,44 @@ BEGIN
     );
   END IF;
 
-  -- Vérifier que le pays existe
-  IF NOT EXISTS (SELECT 1 FROM pays WHERE id = p_pays_id) THEN
+  -- Seul un admin peut créer un CBM
+  IF v_user_role != 'admin' THEN
     RETURN json_build_object(
       'data', NULL,
-      'error', 'Pays non trouvé'
+      'error', 'Seul un administrateur peut créer un tarif CBM'
     );
   END IF;
 
   -- Vérifier que le prix est positif
-  IF p_prix_par_cbm <= 0 THEN
+  IF p_prix_cbm <= 0 THEN
     RETURN json_build_object(
       'data', NULL,
       'error', 'Le prix CBM doit être supérieur à 0'
     );
   END IF;
 
-  -- Vérifier la cohérence des dates
-  IF p_date_fin_validite IS NOT NULL AND p_date_fin_validite < p_date_debut_validite THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'La date de fin doit être après la date de début'
-    );
-  END IF;
-
-  -- Insérer le CBM
+  -- Insérer le CBM (le trigger ensure_single_valid_cbm gérera l'unicité si activé)
   INSERT INTO cbm (
-    pays_id,
-    prix_par_cbm,
+    prix_cbm,
     date_debut_validite,
-    date_fin_validite,
-    actif
+    is_valid
   ) VALUES (
-    p_pays_id,
-    p_prix_par_cbm,
+    p_prix_cbm,
     p_date_debut_validite,
-    p_date_fin_validite,
-    p_actif
+    p_is_valid
   )
   RETURNING id INTO v_cbm_id;
 
-  -- Récupérer le CBM créé avec les relations
+  -- Récupérer le CBM créé
   SELECT json_build_object(
     'id', c.id,
-    'pays_id', c.pays_id,
-    'prix_par_cbm', c.prix_par_cbm,
+    'prix_cbm', c.prix_cbm,
     'date_debut_validite', c.date_debut_validite,
     'date_fin_validite', c.date_fin_validite,
-    'actif', c.actif,
-    'created_at', c.created_at,
-    'updated_at', c.updated_at,
-    'pays', json_build_object(
-      'id', p.id,
-      'nom', p.nom,
-      'code_iso', p.code_iso
-    )
+    'is_valid', c.is_valid,
+    'created_at', c.created_at
   ) INTO v_result
   FROM cbm c
-  LEFT JOIN pays p ON p.id = c.pays_id
   WHERE c.id = v_cbm_id;
 
   RETURN json_build_object(
@@ -232,16 +233,16 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION update_cbm(
   p_auth_uid UUID,
   p_cbm_id INTEGER,
-  p_pays_id INTEGER DEFAULT NULL,
-  p_prix_par_cbm DECIMAL DEFAULT NULL,
+  p_prix_cbm DECIMAL DEFAULT NULL,
   p_date_debut_validite DATE DEFAULT NULL,
   p_date_fin_validite DATE DEFAULT NULL,
-  p_actif BOOLEAN DEFAULT NULL
+  p_is_valid BOOLEAN DEFAULT NULL
 )
 RETURNS JSON AS $$
 DECLARE
   v_result JSON;
   v_user_role VARCHAR;
+  v_current_record RECORD;
 BEGIN
   -- Vérifier que l'utilisateur existe et est actif
   SELECT role INTO v_user_role
@@ -255,61 +256,64 @@ BEGIN
     );
   END IF;
 
-  -- Vérifier que le CBM existe
-  IF NOT EXISTS (SELECT 1 FROM cbm WHERE id = p_cbm_id) THEN
+  -- Seul un admin peut modifier un CBM
+  IF v_user_role != 'admin' THEN
+    RETURN json_build_object(
+      'data', NULL,
+      'error', 'Seul un administrateur peut modifier un tarif CBM'
+    );
+  END IF;
+
+  -- Récupérer les données actuelles
+  SELECT * INTO v_current_record
+  FROM cbm
+  WHERE id = p_cbm_id;
+
+  IF NOT FOUND THEN
     RETURN json_build_object(
       'data', NULL,
       'error', 'Tarif CBM non trouvé'
     );
   END IF;
 
-  -- Vérifier que le pays existe si fourni
-  IF p_pays_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM pays WHERE id = p_pays_id) THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'Pays non trouvé'
-    );
-  END IF;
-
-  -- Vérifier que le prix est positif si fourni
-  IF p_prix_par_cbm IS NOT NULL AND p_prix_par_cbm <= 0 THEN
+  -- Vérifier que le prix est positif (si fourni)
+  IF p_prix_cbm IS NOT NULL AND p_prix_cbm <= 0 THEN
     RETURN json_build_object(
       'data', NULL,
       'error', 'Le prix CBM doit être supérieur à 0'
     );
   END IF;
 
+  -- Vérifier la cohérence des dates
+  IF p_date_fin_validite IS NOT NULL AND 
+     COALESCE(p_date_debut_validite, v_current_record.date_debut_validite) > p_date_fin_validite THEN
+    RETURN json_build_object(
+      'data', NULL,
+      'error', 'La date de fin doit être après la date de début'
+    );
+  END IF;
+
   -- Mettre à jour le CBM (seulement les champs fournis)
   UPDATE cbm SET
-    pays_id = COALESCE(p_pays_id, pays_id),
-    prix_par_cbm = COALESCE(p_prix_par_cbm, prix_par_cbm),
+    prix_cbm = COALESCE(p_prix_cbm, prix_cbm),
     date_debut_validite = COALESCE(p_date_debut_validite, date_debut_validite),
     date_fin_validite = CASE 
-      WHEN p_date_fin_validite IS NOT NULL THEN p_date_fin_validite
-      ELSE date_fin_validite
+      WHEN p_date_fin_validite = 'NULL'::date THEN NULL
+      ELSE COALESCE(p_date_fin_validite, date_fin_validite)
     END,
-    actif = COALESCE(p_actif, actif),
-    updated_at = CURRENT_TIMESTAMP
+    is_valid = COALESCE(p_is_valid, is_valid)
   WHERE id = p_cbm_id;
 
-  -- Récupérer le CBM mis à jour avec les relations
+  -- Récupérer le CBM mis à jour
   SELECT json_build_object(
     'id', c.id,
-    'pays_id', c.pays_id,
-    'prix_par_cbm', c.prix_par_cbm,
+    'prix_cbm', c.prix_cbm,
     'date_debut_validite', c.date_debut_validite,
     'date_fin_validite', c.date_fin_validite,
-    'actif', c.actif,
-    'created_at', c.created_at,
-    'updated_at', c.updated_at,
-    'pays', json_build_object(
-      'id', p.id,
-      'nom', p.nom,
-      'code_iso', p.code_iso
-    )
+    'is_valid', c.is_valid,
+    'created_at', c.created_at
   ) INTO v_result
   FROM cbm c
-  LEFT JOIN pays p ON p.id = c.pays_id
   WHERE c.id = p_cbm_id;
 
   RETURN json_build_object(
@@ -344,23 +348,35 @@ BEGIN
     );
   END IF;
 
+  -- Seul un admin peut supprimer un CBM
+  IF v_user_role != 'admin' THEN
+    RETURN json_build_object(
+      'data', NULL,
+      'error', 'Seul un administrateur peut supprimer un tarif CBM'
+    );
+  END IF;
+
   -- Vérifier que le CBM existe
-  IF NOT EXISTS (SELECT 1 FROM cbm WHERE id = p_cbm_id) THEN
+  IF NOT EXISTS (
+    SELECT 1 FROM cbm WHERE id = p_cbm_id
+  ) THEN
     RETURN json_build_object(
       'data', NULL,
       'error', 'Tarif CBM non trouvé'
     );
   END IF;
 
-  -- Vérifier que le CBM n'est pas utilisé par des colis
+  -- Vérifier que le CBM n'est pas utilisé dans les colis
+  -- Note: Vérifier si la table colis a une colonne prix_cbm_id
+  -- Si non, cette vérification peut être ignorée
   SELECT COUNT(*) INTO v_nb_colis
   FROM colis
-  WHERE prix_cbm_utilise = (SELECT prix_par_cbm FROM cbm WHERE id = p_cbm_id);
+  WHERE prix_cbm_id = p_cbm_id;
 
   IF v_nb_colis > 0 THEN
     RETURN json_build_object(
       'data', NULL,
-      'error', 'Impossible de supprimer ce tarif car il est utilisé par des colis'
+      'error', 'Impossible de supprimer ce tarif CBM car il est utilisé par ' || v_nb_colis || ' colis'
     );
   END IF;
 

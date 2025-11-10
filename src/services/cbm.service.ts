@@ -13,14 +13,19 @@ export class CBMService {
     try {
       const { data, error } = await supabase.rpc("get_cbm_list", {
         p_auth_uid: auth_uid,
-        p_pays_id: filters.pays_id || null,
-        p_actif: filters.actif ?? null,
+        p_is_valid: filters.is_valid ?? null,
         p_date_validite: filters.date_validite || null,
       });
 
       if (error) {
         console.error("[CBMService] getCBMList error:", error);
         return { data: null, error: error.message };
+      }
+
+      // La RPC retourne { data: [...], error: null }
+      // Il faut extraire le contenu de data
+      if (data && typeof data === 'object' && 'data' in data) {
+        return { data: data.data || [], error: data.error || null };
       }
 
       return { data: data || [], error: null };
@@ -44,6 +49,11 @@ export class CBMService {
         return { data: null, error: error.message };
       }
 
+      // La RPC retourne { data: {...}, error: null }
+      if (data && typeof data === 'object' && 'data' in data) {
+        return { data: data.data || null, error: data.error || null };
+      }
+
       return { data, error: null };
     } catch (error: any) {
       return { data: null, error: error.message || "Erreur inconnue" };
@@ -60,15 +70,18 @@ export class CBMService {
     try {
       const { data, error } = await supabase.rpc("create_cbm", {
         p_auth_uid: auth_uid,
-        p_pays_id: cbmData.pays_id,
-        p_prix_par_cbm: cbmData.prix_par_cbm,
+        p_prix_cbm: cbmData.prix_cbm,
         p_date_debut_validite: cbmData.date_debut_validite,
-        p_date_fin_validite: cbmData.date_fin_validite || null,
-        p_actif: cbmData.actif ?? true,
+        p_is_valid: cbmData.is_valid ?? false,
       });
 
       if (error) {
         return { data: null, error: error.message };
+      }
+
+      // La RPC retourne { data: {...}, error: null }
+      if (data && typeof data === 'object' && 'data' in data) {
+        return { data: data.data || null, error: data.error || null };
       }
 
       return { data, error: null };
@@ -88,15 +101,19 @@ export class CBMService {
       const { data, error } = await supabase.rpc("update_cbm", {
         p_auth_uid: auth_uid,
         p_cbm_id: cbmData.id,
-        p_pays_id: cbmData.pays_id,
-        p_prix_par_cbm: cbmData.prix_par_cbm,
+        p_prix_cbm: cbmData.prix_cbm,
         p_date_debut_validite: cbmData.date_debut_validite,
         p_date_fin_validite: cbmData.date_fin_validite,
-        p_actif: cbmData.actif,
+        p_is_valid: cbmData.is_valid,
       });
 
       if (error) {
         return { data: null, error: error.message };
+      }
+
+      // La RPC retourne { data: {...}, error: null }
+      if (data && typeof data === 'object' && 'data' in data) {
+        return { data: data.data || null, error: data.error || null };
       }
 
       return { data, error: null };
@@ -120,6 +137,30 @@ export class CBMService {
       }
 
       return { data: null, error: null };
+    } catch (error: any) {
+      return { data: null, error: error.message || "Erreur inconnue" };
+    }
+  }
+
+  /**
+   * Récupérer le tarif CBM actuellement valide
+   */
+  async getCurrentCBM(auth_uid: string): Promise<ApiResponse<CBM>> {
+    try {
+      const { data, error } = await supabase.rpc("get_current_cbm", {
+        p_auth_uid: auth_uid,
+      });
+
+      if (error) {
+        return { data: null, error: error.message };
+      }
+
+      // La RPC retourne { data: {...}, error: null }
+      if (data && typeof data === 'object' && 'data' in data) {
+        return { data: data.data || null, error: data.error || null };
+      }
+
+      return { data, error: null };
     } catch (error: any) {
       return { data: null, error: error.message || "Erreur inconnue" };
     }
