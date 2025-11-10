@@ -14,7 +14,7 @@ const mainRoutes = [
   { path: "/dashboard", label: "Dashboard", icon: Home },
   { path: "/containers", label: "Conteneurs", icon: Package },
   { path: "/clients", label: "Clients", icon: Users },
-  { path: "/colis", label: "Colis", icon: Box },
+  // { path: "/colis", label: "Colis", icon: Box },
   { path: "/settings", label: "Paramètres", icon: Settings },
 ];
 

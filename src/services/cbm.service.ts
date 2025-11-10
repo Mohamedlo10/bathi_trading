@@ -98,14 +98,27 @@ export class CBMService {
     cbmData: UpdateCBMInput
   ): Promise<ApiResponse<CBM>> {
     try {
-      const { data, error } = await supabase.rpc("update_cbm", {
+      // Construire les paramètres en excluant les valeurs undefined
+      const params: any = {
         p_auth_uid: auth_uid,
         p_cbm_id: cbmData.id,
-        p_prix_cbm: cbmData.prix_cbm,
-        p_date_debut_validite: cbmData.date_debut_validite,
-        p_date_fin_validite: cbmData.date_fin_validite,
-        p_is_valid: cbmData.is_valid,
-      });
+      };
+
+      // N'ajouter que les champs définis (pas undefined)
+      if (cbmData.prix_cbm !== undefined) {
+        params.p_prix_cbm = cbmData.prix_cbm;
+      }
+      if (cbmData.date_debut_validite !== undefined) {
+        params.p_date_debut_validite = cbmData.date_debut_validite;
+      }
+      if (cbmData.date_fin_validite !== undefined) {
+        params.p_date_fin_validite = cbmData.date_fin_validite;
+      }
+      if (cbmData.is_valid !== undefined) {
+        params.p_is_valid = cbmData.is_valid;
+      }
+
+      const { data, error } = await supabase.rpc("update_cbm", params);
 
       if (error) {
         return { data: null, error: error.message };

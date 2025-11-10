@@ -199,7 +199,7 @@ export function ClientSelectWithCreate({
                   </div>
                 </CommandEmpty>
                 
-                <CommandGroup>
+                <CommandGroup className="">
                   {/* Bouton créer en haut */}
                   <CommandItem
                     onSelect={() => {

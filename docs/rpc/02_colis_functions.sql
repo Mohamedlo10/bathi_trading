@@ -241,6 +241,8 @@ DECLARE
   v_colis_id INTEGER;
   v_result JSON;
   v_total_cbm DECIMAL;
+  v_type_conteneur VARCHAR;
+  v_capacite_max DECIMAL;
 BEGIN
   -- Vérifier que l'utilisateur existe et est actif
   IF NOT EXISTS (
@@ -261,12 +263,26 @@ BEGIN
     );
   END IF;
 
-  -- Vérifier que le conteneur existe
-  IF NOT EXISTS (SELECT 1 FROM container WHERE id = p_id_container) THEN
+  -- Vérifier que le conteneur existe et récupérer son type et CBM actuel
+  SELECT type_conteneur, COALESCE(total_cbm, 0) 
+  INTO v_type_conteneur, v_total_cbm
+  FROM container
+  WHERE id = p_id_container;
+
+  IF v_type_conteneur IS NULL THEN
     RETURN json_build_object(
       'data', NULL,
       'error', 'Conteneur non trouvé'
     );
+  END IF;
+
+  -- Déterminer la capacité maximale selon le type de conteneur
+  IF v_type_conteneur = '20pieds' THEN
+    v_capacite_max := 35;
+  ELSIF v_type_conteneur = '40pieds' THEN
+    v_capacite_max := 70;
+  ELSE
+    v_capacite_max := 70; -- Valeur par défaut
   END IF;
 
   -- Vérifier que le prix CBM existe
@@ -277,15 +293,11 @@ BEGIN
     );
   END IF;
 
-  -- Vérifier que l'ajout du CBM ne dépasse pas la limite de 70
-  SELECT COALESCE(total_cbm, 0) INTO v_total_cbm
-  FROM container
-  WHERE id = p_id_container;
-
-  IF (v_total_cbm + p_cbm) > 70 THEN
+  -- Vérifier que l'ajout du CBM ne dépasse pas la capacité maximale
+  IF (v_total_cbm + p_cbm) > v_capacite_max THEN
     RETURN json_build_object(
       'data', NULL,
-      'error', 'La limite de 70 CBM serait dépassée. CBM actuel: ' || v_total_cbm || ', CBM à ajouter: ' || p_cbm
+      'error', 'La capacité maximale du conteneur (' || v_capacite_max || ' m³) serait dépassée. CBM actuel: ' || v_total_cbm || ' m³, CBM à ajouter: ' || p_cbm || ' m³'
     );
   END IF;
 
@@ -356,6 +368,8 @@ DECLARE
   v_result JSON;
   v_total_cbm DECIMAL;
   v_old_cbm DECIMAL;
+  v_type_conteneur VARCHAR;
+  v_capacite_max DECIMAL;
 BEGIN
   -- Vérifier que l'utilisateur existe et est actif
   IF NOT EXISTS (
@@ -379,15 +393,33 @@ BEGIN
   -- Récupérer l'ancien CBM du colis
   SELECT cbm INTO v_old_cbm FROM colis WHERE id = p_colis_id;
 
-  -- Vérifier que la modification du CBM ne dépasse pas la limite
-  SELECT COALESCE(total_cbm, 0) INTO v_total_cbm
+  -- Récupérer le type et le CBM actuel du conteneur
+  SELECT type_conteneur, COALESCE(total_cbm, 0) 
+  INTO v_type_conteneur, v_total_cbm
   FROM container
   WHERE id = p_id_container;
 
-  IF (v_total_cbm - v_old_cbm + p_cbm) > 70 THEN
+  IF v_type_conteneur IS NULL THEN
     RETURN json_build_object(
       'data', NULL,
-      'error', 'La limite de 70 CBM serait dépassée'
+      'error', 'Conteneur non trouvé'
+    );
+  END IF;
+
+  -- Déterminer la capacité maximale selon le type de conteneur
+  IF v_type_conteneur = '20pieds' THEN
+    v_capacite_max := 35;
+  ELSIF v_type_conteneur = '40pieds' THEN
+    v_capacite_max := 70;
+  ELSE
+    v_capacite_max := 70; -- Valeur par défaut
+  END IF;
+
+  -- Vérifier que la modification du CBM ne dépasse pas la capacité maximale
+  IF (v_total_cbm - v_old_cbm + p_cbm) > v_capacite_max THEN
+    RETURN json_build_object(
+      'data', NULL,
+      'error', 'La capacité maximale du conteneur (' || v_capacite_max || ' m³) serait dépassée'
     );
   END IF;
 

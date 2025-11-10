@@ -113,7 +113,7 @@ export class ColisService {
         p_nb_pieces: colisData.nb_pieces || 1,
         p_poids: colisData.poids,
         p_cbm: colisData.cbm,
-        p_prix_cbm_id: colisData.prix_cbm_id || null,
+        p_prix_cbm_id: colisData.prix_cbm_id, // Ne pas convertir en null
         p_statut: colisData.statut || "non_paye",
       });
 

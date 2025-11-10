@@ -2,7 +2,7 @@
 export interface Pays {
   id: number;
   nom: string;
-  code_iso?: string | null;
+  code?: string | null;
   actif: boolean;
   created_at: string;
   updated_at?: string;
@@ -11,7 +11,7 @@ export interface Pays {
 // Données pour créer un pays
 export interface CreatePaysInput {
   nom: string;
-  code_iso?: string;
+  code?: string;
   actif?: boolean;
 }
 

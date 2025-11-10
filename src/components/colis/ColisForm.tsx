@@ -11,10 +11,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, DollarSign, Info, Calendar } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2, DollarSign, Info, Calendar, AlertTriangle, Package } from "lucide-react";
 import { ClientSelectWithCreate } from "@/components/clients/ClientSelectWithCreate";
+import { CBMActivationDialog } from "./CBMActivationDialog";
 import { useAuth } from "@/hooks/use-auth";
 import type { Colis, CreateColisInput, StatutColis } from "@/types/colis";
+import type { Container, TypeConteneur } from "@/types/container";
 import { supabase } from "@/lib/supabase-client";
 
 interface ColisFormProps {
@@ -34,10 +37,19 @@ export function ColisForm({
 }: ColisFormProps) {
   const { user } = useAuth();
   const [currentCBM, setCurrentCBM] = useState<{
+    id: number;
     prix_cbm: number;
     date_debut_validite: string;
   } | null>(null);
   const [loadingCBM, setLoadingCBM] = useState(true);
+  const [showCBMDialog, setShowCBMDialog] = useState(false);
+  
+  // Informations du conteneur pour la vérification de capacité
+  const [containerInfo, setContainerInfo] = useState<{
+    total_cbm: number;
+    type_conteneur: TypeConteneur;
+  } | null>(null);
+  const [loadingContainer, setLoadingContainer] = useState(true);
   
   const [formData, setFormData] = useState<CreateColisInput>({
     id_client: "", // UUID vide par défaut
@@ -49,6 +61,40 @@ export function ColisForm({
     prix_cbm_id: 0, // Sera auto-sélectionné par la fonction SQL
     statut: "non_paye",
   });
+
+  // Définir les capacités maximales selon le type de conteneur
+  const CAPACITES_MAX: Record<TypeConteneur, number> = {
+    "20pieds": 33,
+    "40pieds": 67,
+  };
+
+  // Charger les informations du conteneur
+  useEffect(() => {
+    const fetchContainerInfo = async () => {
+      if (!user) return;
+      
+      setLoadingContainer(true);
+      try {
+        const { data, error } = await supabase.rpc("get_container_by_id", {
+          p_auth_uid: user.auth_uid,
+          p_container_id: container_id,
+        });
+
+        if (!error && data?.data) {
+          setContainerInfo({
+            total_cbm: data.data.total_cbm || 0,
+            type_conteneur: data.data.type_conteneur,
+          });
+        }
+      } catch (err) {
+        console.error("Erreur lors du chargement du conteneur:", err);
+      } finally {
+        setLoadingContainer(false);
+      }
+    };
+
+    fetchContainerInfo();
+  }, [user, container_id]);
 
   // Charger le prix CBM actuel
   useEffect(() => {
@@ -62,25 +108,47 @@ export function ColisForm({
         });
 
         if (!error && data?.data) {
-          setCurrentCBM({
+          const cbmData = {
+            id: data.data.id,
             prix_cbm: data.data.prix_cbm,
             date_debut_validite: data.data.date_debut_validite,
-          });
+          };
+          setCurrentCBM(cbmData);
+          
+          // Mettre à jour le prix_cbm_id dans le formulaire automatiquement
+          setFormData(prev => ({
+            ...prev,
+            prix_cbm_id: cbmData.id
+          }));
+        } else {
+          // Aucun CBM actif trouvé
+          setCurrentCBM(null);
         }
       } catch (err) {
         console.error("Erreur lors du chargement du CBM:", err);
+        setCurrentCBM(null);
       } finally {
         setLoadingCBM(false);
       }
     };
 
     fetchCurrentCBM();
-  }, [user]);
+  }, [user, showCBMDialog]); // Recharger quand le dialog se ferme
 
   // Calculer le montant estimé
   const montantEstime = formData.cbm && currentCBM 
     ? formData.cbm * currentCBM.prix_cbm 
     : 0;
+
+  // Calculer la capacité restante et vérifier le dépassement
+  const cbmActuel = containerInfo?.total_cbm || 0;
+  const cbmAncien = colis?.cbm || 0; // CBM du colis actuel si modification
+  const cbmAjoute = formData.cbm - cbmAncien; // CBM net à ajouter
+  const cbmApresAjout = cbmActuel + cbmAjoute;
+  const capaciteMax = containerInfo ? CAPACITES_MAX[containerInfo.type_conteneur] : 70;
+  const cbmRestant = capaciteMax - cbmActuel;
+  const depassementCapacite = cbmApresAjout > capaciteMax;
+  const tauxRemplissage = containerInfo ? (cbmApresAjout / capaciteMax) * 100 : 0;
 
   // Pré-remplir le formulaire si on modifie un colis
   useEffect(() => {
@@ -100,11 +168,121 @@ export function ColisForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await onSubmit(formData);
+    
+    // Vérifier si un tarif CBM est actif
+    if (!currentCBM && !loadingCBM) {
+      setShowCBMDialog(true);
+      return; // Bloquer la soumission et ouvrir le dialog
+    }
+    
+    // Vérifier la capacité avant soumission
+    if (depassementCapacite) {
+      return; // Bloquer la soumission si dépassement
+    }
+    
+    // S'assurer que le prix_cbm_id est bien défini avant la soumission
+    const dataToSubmit = {
+      ...formData,
+      prix_cbm_id: currentCBM?.id || formData.prix_cbm_id
+    };
+    
+    console.log("Données à soumettre:", dataToSubmit); // Debug
+    
+    await onSubmit(dataToSubmit);
+  };
+
+  const handleCBMActivationSuccess = () => {
+    // Le useEffect rechargera automatiquement le CBM actuel
+    // grâce à la dépendance showCBMDialog
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <>
+      <CBMActivationDialog
+        open={showCBMDialog}
+        onOpenChange={setShowCBMDialog}
+        onActivationSuccess={handleCBMActivationSuccess}
+      />
+      
+      <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Affichage de la capacité du conteneur */}
+      {loadingContainer ? (
+        <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm text-muted-foreground">Chargement de la capacité...</span>
+        </div>
+      ) : containerInfo && (
+        <div className="space-y-3 p-4 bg-muted/50 rounded-lg border">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium">Capacité du conteneur</span>
+            </div>
+            <Badge variant={tauxRemplissage >= 90 ? "destructive" : tauxRemplissage >= 70 ? "default" : "secondary"}>
+              {tauxRemplissage.toFixed(1)}%
+            </Badge>
+          </div>
+          
+          {/* Barre de progression */}
+          <div className="space-y-1">
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-300 ${
+                  depassementCapacite 
+                    ? "bg-destructive" 
+                    : tauxRemplissage >= 90 
+                    ? "bg-orange-500" 
+                    : "bg-primary"
+                }`}
+                style={{ width: `${Math.min(tauxRemplissage, 100)}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{cbmApresAjout.toFixed(3)} m³ utilisés</span>
+              <span>{capaciteMax} m³ max ({containerInfo.type_conteneur === "20pieds" ? "20 pieds" : "40 pieds"})</span>
+            </div>
+          </div>
+
+          {/* Informations détaillées */}
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="p-2 bg-background rounded">
+              <div className="text-muted-foreground">CBM actuel</div>
+              <div className="font-semibold">{cbmActuel.toFixed(3)} m³</div>
+            </div>
+            <div className="p-2 bg-background rounded">
+              <div className="text-muted-foreground">CBM restant</div>
+              <div className={`font-semibold ${cbmRestant < 5 ? "text-orange-500" : ""}`}>
+                {Math.max(cbmRestant - cbmAjoute, 0).toFixed(3)} m³
+              </div>
+            </div>
+          </div>
+
+          {/* Alerte de dépassement */}
+          {depassementCapacite && formData.cbm > 0 && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Capacité dépassée !</strong>
+                <br />
+                Ce colis de <strong>{formData.cbm.toFixed(3)} m³</strong> dépasse la capacité maximale.
+                <br />
+                Il reste seulement <strong>{cbmRestant.toFixed(3)} m³</strong> disponibles.
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          {/* Avertissement proche de la limite */}
+          {!depassementCapacite && tauxRemplissage >= 90 && formData.cbm > 0 && (
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                Le conteneur sera rempli à <strong>{tauxRemplissage.toFixed(1)}%</strong> après cet ajout.
+              </AlertDescription>
+            </Alert>
+          )}
+        </div>
+      )}
+
       {/* Client Select avec création rapide */}
       <ClientSelectWithCreate
         value={formData.id_client}
@@ -224,10 +402,23 @@ export function ColisForm({
             )}
           </div>
         ) : (
-          <p className="text-xs text-destructive flex items-center gap-1">
-            <Info className="w-3 h-3" />
-            Aucun tarif CBM actif trouvé
-          </p>
+          <Alert variant="destructive" className="mt-2">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Aucun tarif CBM actif !</strong>
+              <br />
+              Vous devez activer un tarif CBM pour pouvoir créer des colis.
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCBMDialog(true)}
+                className="mt-2 w-full"
+              >
+                Activer un tarif CBM
+              </Button>
+            </AlertDescription>
+          </Alert>
         )}
       </div>
 
@@ -262,7 +453,11 @@ export function ColisForm({
         >
           Annuler
         </Button>
-        <Button type="submit" disabled={loading} className="flex-1">
+        <Button 
+          type="submit" 
+          disabled={loading || depassementCapacite || !formData.id_client} 
+          className="flex-1"
+        >
           {loading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -274,5 +469,6 @@ export function ColisForm({
         </Button>
       </div>
     </form>
+    </>
   );
 }

@@ -54,7 +54,6 @@ const TarifsManagement = () => {
   const [deletingTarif, setDeletingTarif] = useState<CBM | null>(null);
   const [formData, setFormData] = useState({
     prix_cbm: "",
-    date_debut_validite: "",
     date_fin_validite: "",
     is_valid: true,
   });
@@ -70,7 +69,6 @@ const TarifsManagement = () => {
       setEditingTarif(tarifToEdit);
       setFormData({
         prix_cbm: tarifToEdit.prix_cbm.toString(),
-        date_debut_validite: tarifToEdit.date_debut_validite,
         date_fin_validite: tarifToEdit.date_fin_validite || "",
         is_valid: tarifToEdit.is_valid,
       });
@@ -78,7 +76,6 @@ const TarifsManagement = () => {
       setEditingTarif(null);
       setFormData({
         prix_cbm: "",
-        date_debut_validite: "",
         date_fin_validite: "",
         is_valid: true,
       });
@@ -92,7 +89,6 @@ const TarifsManagement = () => {
     setEditingTarif(null);
     setFormData({
       prix_cbm: "",
-      date_debut_validite: "",
       date_fin_validite: "",
       is_valid: true,
     });
@@ -104,15 +100,6 @@ const TarifsManagement = () => {
 
     if (!formData.prix_cbm || parseFloat(formData.prix_cbm) <= 0) {
       newErrors.prix_cbm = "Le prix doit être supérieur à 0";
-    }
-    if (!formData.date_debut_validite) {
-      newErrors.date_debut_validite = "La date de début est requise";
-    }
-    
-    if (formData.date_fin_validite && formData.date_debut_validite) {
-      if (new Date(formData.date_fin_validite) < new Date(formData.date_debut_validite)) {
-        newErrors.date_fin_validite = "La date de fin ne peut pas précéder la date de début";
-      }
     }
 
     setErrors(newErrors);
@@ -127,17 +114,21 @@ const TarifsManagement = () => {
 
     setIsSaving(true);
 
-    const data = {
+    const data: any = {
       prix_cbm: parseFloat(formData.prix_cbm),
-      date_debut_validite: formData.date_debut_validite,
-      date_fin_validite: formData.date_fin_validite || undefined,
       is_valid: formData.is_valid,
     };
+
+    // N'envoyer date_fin_validite que si elle est définie
+    if (formData.date_fin_validite) {
+      data.date_fin_validite = formData.date_fin_validite;
+    }
 
     let result;
     if (editingTarif) {
       result = await updateTarif(editingTarif.id, data);
     } else {
+      // Pour la création, date_debut_validite sera CURRENT_DATE par défaut
       result = await createTarif(data);
     }
 
@@ -313,25 +304,6 @@ const TarifsManagement = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="date_debut_validite">
-                Date de début de validité <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="date_debut_validite"
-                type="date"
-                value={formData.date_debut_validite}
-                onChange={(e) => {
-                  setFormData({ ...formData, date_debut_validite: e.target.value });
-                  if (errors.date_debut_validite) setErrors({ ...errors, date_debut_validite: "" });
-                }}
-                className={errors.date_debut_validite ? "border-destructive" : ""}
-              />
-              {errors.date_debut_validite && (
-                <p className="text-sm text-destructive">{errors.date_debut_validite}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
               <Label htmlFor="date_fin_validite">Date de fin de validité (optionnel)</Label>
               <Input
                 id="date_fin_validite"
@@ -341,17 +313,14 @@ const TarifsManagement = () => {
                   setFormData({ ...formData, date_fin_validite: e.target.value });
                   if (errors.date_fin_validite) setErrors({ ...errors, date_fin_validite: "" });
                 }}
-                min={formData.date_debut_validite || undefined}
                 className={errors.date_fin_validite ? "border-destructive" : ""}
               />
               {errors.date_fin_validite && (
                 <p className="text-sm text-destructive">{errors.date_fin_validite}</p>
               )}
-              {formData.date_debut_validite && (
-                <p className="text-xs text-muted-foreground">
-                  Laissez vide pour un tarif illimité
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                Laissez vide pour un tarif illimité. La date de début sera automatiquement la date de création.
+              </p>
             </div>
 
             <div className="flex items-center justify-between">

@@ -53,7 +53,7 @@ const PaysManagement = () => {
   const [deletingPays, setDeletingPays] = useState<Pays | null>(null);
   const [formData, setFormData] = useState({
     nom: "",
-    code_iso: "",
+    code: "",
     actif: true,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -65,7 +65,7 @@ const PaysManagement = () => {
 
   const filteredPays = pays.filter((p) =>
     p.nom.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    p.code_iso?.toLowerCase().includes(searchQuery.toLowerCase())
+    p.code?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleOpenDialog = (paysToEdit?: Pays) => {
@@ -73,14 +73,14 @@ const PaysManagement = () => {
       setEditingPays(paysToEdit);
       setFormData({
         nom: paysToEdit.nom,
-        code_iso: paysToEdit.code_iso || "",
+        code: paysToEdit.code || "",
         actif: paysToEdit.actif,
       });
     } else {
       setEditingPays(null);
       setFormData({
         nom: "",
-        code_iso: "",
+        code: "",
         actif: true,
       });
     }
@@ -91,7 +91,7 @@ const PaysManagement = () => {
   const handleCloseDialog = () => {
     setShowDialog(false);
     setEditingPays(null);
-    setFormData({ nom: "", code_iso: "", actif: true });
+    setFormData({ nom: "", code: "", actif: true });
     setErrors({});
   };
 
@@ -102,8 +102,8 @@ const PaysManagement = () => {
       newErrors.nom = "Le nom du pays est requis";
     }
 
-    if (formData.code_iso && formData.code_iso.length !== 2 && formData.code_iso.length !== 3) {
-      newErrors.code_iso = "Le code ISO doit contenir 2 ou 3 lettres";
+    if (formData.code && formData.code.length !== 2 && formData.code.length !== 3) {
+      newErrors.code = "Le code ISO doit contenir 2 ou 3 lettres";
     }
 
     setErrors(newErrors);
@@ -120,7 +120,7 @@ const PaysManagement = () => {
 
     const data = {
       nom: formData.nom.trim(),
-      code_iso: formData.code_iso.trim().toUpperCase() || undefined,
+      code: formData.code.trim().toUpperCase() || undefined,
       actif: formData.actif,
     };
 
@@ -209,8 +209,8 @@ const PaysManagement = () => {
                 <TableRow key={paysItem.id}>
                   <TableCell className="font-medium">{paysItem.nom}</TableCell>
                   <TableCell>
-                    {paysItem.code_iso ? (
-                      <Badge variant="outline">{paysItem.code_iso}</Badge>
+                    {paysItem.code ? (
+                      <Badge variant="outline">{paysItem.code}</Badge>
                     ) : (
                       <span className="text-muted-foreground text-sm">—</span>
                     )}
@@ -297,20 +297,20 @@ const PaysManagement = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="code_iso">Code ISO (optionnel)</Label>
+              <Label htmlFor="code">Code ISO (optionnel)</Label>
               <Input
-                id="code_iso"
-                value={formData.code_iso}
+                id="code"
+                value={formData.code}
                 onChange={(e) => {
-                  setFormData({ ...formData, code_iso: e.target.value });
-                  if (errors.code_iso) setErrors({ ...errors, code_iso: "" });
+                  setFormData({ ...formData, code: e.target.value });
+                  if (errors.code) setErrors({ ...errors, code: "" });
                 }}
                 placeholder="Ex: FR ou FRA"
                 maxLength={3}
-                className={errors.code_iso ? "border-destructive" : ""}
+                className={errors.code ? "border-destructive" : ""}
               />
-              {errors.code_iso && (
-                <p className="text-sm text-destructive">{errors.code_iso}</p>
+              {errors.code && (
+                <p className="text-sm text-destructive">{errors.code}</p>
               )}
             </div>
 

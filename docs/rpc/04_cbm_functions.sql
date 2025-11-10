@@ -294,12 +294,21 @@ BEGIN
   END IF;
 
   -- Mettre à jour le CBM (seulement les champs fournis)
+  -- Si on active le tarif (is_valid = true), on met date_fin_validite à NULL (illimité)
+  -- Si on désactive le tarif (is_valid = false), on met date_fin_validite à CURRENT_DATE
+  -- SAUF si date_debut_validite est dans le futur, auquel cas on garde date_fin_validite actuelle
   UPDATE cbm SET
     prix_cbm = COALESCE(p_prix_cbm, prix_cbm),
     date_debut_validite = COALESCE(p_date_debut_validite, date_debut_validite),
     date_fin_validite = CASE 
-      WHEN p_date_fin_validite = 'NULL'::date THEN NULL
-      ELSE COALESCE(p_date_fin_validite, date_fin_validite)
+      WHEN p_is_valid = true THEN NULL  -- Activé = illimité
+      WHEN p_is_valid = false THEN 
+        CASE 
+          WHEN COALESCE(p_date_debut_validite, date_debut_validite) <= CURRENT_DATE 
+          THEN CURRENT_DATE  -- Désactivé = fin aujourd'hui (si date début <= aujourd'hui)
+          ELSE date_fin_validite  -- Sinon garder la date de fin actuelle
+        END
+      ELSE COALESCE(p_date_fin_validite, date_fin_validite)  -- Pas de changement de statut
     END,
     is_valid = COALESCE(p_is_valid, is_valid)
   WHERE id = p_cbm_id;
