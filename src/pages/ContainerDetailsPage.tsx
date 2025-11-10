@@ -214,13 +214,13 @@ const ContainerDetailsPage = () => {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-start gap-4">
-          <Button 
-            variant="outline" 
-            size="icon" 
-            onClick={() => navigate("/containers")}
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
+            <Button 
+                  variant="outline" 
+                  size="icon" 
+                  onClick={() => navigate(-1)}
+                  >
+                  <ArrowLeft className="w-5 h-5" />
+                  </Button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
               {container.nom}

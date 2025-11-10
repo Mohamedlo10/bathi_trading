@@ -2,6 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Edit, Trash2, Package } from "lucide-react";
 import type { Colis } from "@/types/colis";
+import { useNavigate } from "react-router";
 
 interface ColisListProps {
   colis: Colis[];
@@ -15,10 +16,10 @@ function groupColisByClient(colis: Colis[]) {
   const grouped = new Map<string, { client: any; colis: Colis[] }>();
 
   colis.forEach((c) => {
-    const clientId = c.id_client; // UUID déjà en string
+    const clientId = c.client.id; // UUID déjà en string
     if (!grouped.has(clientId)) {
       grouped.set(clientId, {
-        client: c.client || { id: c.id_client, full_name: "Client inconnu" },
+        client: c.client || { id: c.client.id, full_name: "Client inconnu" },
         colis: [],
       });
     }
@@ -29,6 +30,8 @@ function groupColisByClient(colis: Colis[]) {
 }
 
 export function ColisList({ colis, onEdit, onDelete, groupByClient = true }: ColisListProps) {
+  const navigate = useNavigate();
+
   if (colis.length === 0) {
     return (
       <Card className="p-12">
@@ -64,7 +67,7 @@ export function ColisList({ colis, onEdit, onDelete, groupByClient = true }: Col
       {grouped.map((group) => (
         <Card key={group.client.id} className="overflow-hidden">
           {/* Header Client */}
-          <div className="bg-primary/5 p-4 border-b">
+          <div onClick={()=> navigate(`/clients/${group.client.id}`) } className="bg-primary/5 cursor-pointer hover:bg-primary/10 p-4 border-b">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-semibold text-base">

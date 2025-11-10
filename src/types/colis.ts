@@ -26,6 +26,7 @@ export interface Colis {
     nom: string;
     numero_conteneur: string;
   };
+  container_numero?: string; // Ajouté pour la jointure
   prix_cbm?: {
     id: number;
     prix_cbm: number;
@@ -53,7 +54,7 @@ export interface UpdateColisInput extends Partial<CreateColisInput> {
 // Filtres pour la recherche de colis
 export interface ColisFilters {
   search?: string;
-  client_id?: number;
+  client_id?: string; // UUID
   container_id?: number;
   statut?: StatutColis;
   date_debut?: string;

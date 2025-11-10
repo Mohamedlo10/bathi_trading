@@ -6,14 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Search, Phone, Package, Plus, Loader2, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { useClients } from "@/hooks/use-clients";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ClientFormDialog } from "@/components/clients/ClientFormDialog";
+import { toast } from "sonner";
 
 const Clients = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15; // Plus d'items par page pour une liste compacte
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
-  const { clients, loading, error, pagination, fetchClients } = useClients();
+  const { clients, loading, error, pagination, fetchClients, createClient } = useClients();
 
   // Charger les clients au montage et quand la page/recherche change
   useEffect(() => {
@@ -36,6 +39,16 @@ const Clients = () => {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  const handleCreateClient = async (data: { full_name: string; telephone: string }) => {
+    const result = await createClient(data);
+    if (result) {
+      toast.success("Client créé avec succès");
+      setCreateDialogOpen(false);
+    } else {
+      toast.error("Erreur lors de la création du client");
+    }
+  };
+
   if (loading && clients.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -54,7 +67,7 @@ const Clients = () => {
             {pagination.total} client{pagination.total > 1 ? "s" : ""} au total
           </p>
         </div>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => setCreateDialogOpen(true)}>
           <Plus className="w-4 h-4" />
           Nouveau client
         </Button>
@@ -167,6 +180,13 @@ const Clients = () => {
           </div>
         )}
       </Card>
+
+      {/* Dialog de création */}
+      <ClientFormDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onSubmit={handleCreateClient}
+      />
     </div>
   );
 };

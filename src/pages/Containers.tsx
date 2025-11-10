@@ -14,7 +14,9 @@ import {
   AlertCircle,
   RefreshCw,
   Grid3x3,
-  List
+  List,
+  Calendar,
+  X
 } from "lucide-react";
 import { useContainers } from "@/hooks/use-containers";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -25,12 +27,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { format } from "date-fns";
+import { fr } from "date-fns/locale";
+import { Label } from "@/components/ui/label";
 
 const Containers = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [dateDebut, setDateDebut] = useState<string>("");
+  const [dateFin, setDateFin] = useState<string>("");
+  const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(12);
   
@@ -42,31 +55,43 @@ const Containers = () => {
     pagination 
   } = useContainers();
 
-  // Filtrer les conteneurs selon la recherche et les filtres
-  const filteredContainers = containers.filter((container) => {
-    const matchesSearch = 
-      container.nom?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      container.numero_conteneur?.toLowerCase().includes(searchQuery.toLowerCase());
+  // Charger les conteneurs avec filtres
+  useEffect(() => {
+    const filters = {
+      search: searchQuery || undefined,
+      statut: statusFilter !== "all" ? (statusFilter as any) : undefined,
+      date_debut: dateDebut || undefined,
+      date_fin: dateFin || undefined,
+    };
     
-    // TODO: Ajouter filtre par statut quand disponible
-    const matchesStatus = statusFilter === "all" || true;
-    
-    return matchesSearch && matchesStatus;
-  });
+    fetchContainers(filters, { page: currentPage, limit: itemsPerPage });
+  }, [searchQuery, statusFilter, dateDebut, dateFin, currentPage, itemsPerPage]);
+
+  // Réinitialiser les filtres
+  const resetFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setDateDebut("");
+    setDateFin("");
+    setCurrentPage(1);
+  };
+
+  // Vérifier si des filtres sont actifs
+  const hasActiveFilters = searchQuery || statusFilter !== "all" || dateDebut || dateFin;
 
   const getCBMColor = (cbm: number, max: number) => {
     const percentage = (cbm / max) * 100;
     if (percentage >= 100) return "bg-cbm-full";
-    if (percentage > 92) return "bg-cbm-high";
-    if (percentage > 71) return "bg-cbm-medium";
+    if (percentage > 80) return "bg-cbm-high";
+    if (percentage > 50) return "bg-cbm-medium";
     return "bg-cbm-low";
   };
 
   const getCBMTextColor = (cbm: number, max: number) => {
     const percentage = (cbm / max) * 100;
     if (percentage >= 100) return "text-cbm-full";
-    if (percentage > 92) return "text-cbm-high";
-    if (percentage > 71) return "text-cbm-medium";
+    if (percentage > 80) return "text-cbm-high";
+    if (percentage > 50) return "text-cbm-medium";
     return "text-cbm-low";
   };
 
@@ -84,7 +109,7 @@ const Containers = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Conteneurs</h1>
           <p className="text-muted-foreground">
-            {loading ? "Chargement..." : `${filteredContainers.length} conteneur(s)`}
+            {loading ? "Chargement..." : `${containers.length} conteneur(s)`}
           </p>
         </div>
         <div className="flex gap-2">
@@ -113,43 +138,99 @@ const Containers = () => {
 
       {/* Filters */}
       <Card className="p-4">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <Input
-              placeholder="Rechercher par numéro, nom..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-11"
-            />
-          </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Statut" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tous les statuts</SelectItem>
-              <SelectItem value="active">Actif</SelectItem>
-              <SelectItem value="transit">En transit</SelectItem>
-              <SelectItem value="arrived">Arrivé</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="flex gap-2">
+        <div className="space-y-4">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <Input
+                placeholder="Rechercher par numéro, nom..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-11"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Statut" />
+              </SelectTrigger>
+              <SelectContent className="bg-white">
+                <SelectItem value="all">Tous les statuts</SelectItem>
+                <SelectItem value="en_preparation">En préparation</SelectItem>
+                <SelectItem value="en_transit">En transit</SelectItem>
+                <SelectItem value="arrive">Arrivé</SelectItem>
+                <SelectItem value="livre">Livré</SelectItem>
+              </SelectContent>
+            </Select>
             <Button
-              variant={viewMode === "grid" ? "default" : "outline"}
-              size="icon"
-              onClick={() => setViewMode("grid")}
+              variant="outline"
+              onClick={() => setShowFilters(!showFilters)}
+              className="gap-2"
             >
-              <Grid3x3 className="w-4 h-4" />
+              <Filter className="w-4 h-4" />
+              Filtres avancés
+              {hasActiveFilters && (
+                <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary text-primary-foreground rounded-full">
+                  {[searchQuery, statusFilter !== "all", dateDebut, dateFin].filter(Boolean).length}
+                </span>
+              )}
             </Button>
-            <Button
-              variant={viewMode === "list" ? "default" : "outline"}
-              size="icon"
-              onClick={() => setViewMode("list")}
-            >
-              <List className="w-4 h-4" />
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant={viewMode === "grid" ? "default" : "outline"}
+                size="icon"
+                onClick={() => setViewMode("grid")}
+              >
+                <Grid3x3 className="w-4 h-4" />
+              </Button>
+              <Button
+                variant={viewMode === "list" ? "default" : "outline"}
+                size="icon"
+                onClick={() => setViewMode("list")}
+              >
+                <List className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
+
+          {/* Filtres avancés */}
+          {showFilters && (
+            <div className="pt-4 border-t space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="date-debut">Date de chargement (début)</Label>
+                  <Input
+                    id="date-debut"
+                    type="date"
+                    value={dateDebut}
+                    onChange={(e) => setDateDebut(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="date-fin">Date de chargement (fin)</Label>
+                  <Input
+                    id="date-fin"
+                    type="date"
+                    value={dateFin}
+                    onChange={(e) => setDateFin(e.target.value)}
+                  />
+                </div>
+              </div>
+              
+              {hasActiveFilters && (
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={resetFilters}
+                    className="gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Réinitialiser les filtres
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </Card>
 
@@ -161,17 +242,17 @@ const Containers = () => {
       )}
 
       {/* Empty State */}
-      {!loading && filteredContainers.length === 0 && (
+      {!loading && containers.length === 0 && (
         <Card className="p-12">
           <div className="text-center">
             <Package className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-semibold mb-2">Aucun conteneur trouvé</h3>
             <p className="text-muted-foreground mb-4">
-              {searchQuery
+              {searchQuery || hasActiveFilters
                 ? "Aucun conteneur ne correspond à votre recherche"
                 : "Commencez par créer votre premier conteneur"}
             </p>
-            {!searchQuery && (
+            {!searchQuery && !hasActiveFilters && (
               <Button onClick={() => navigate("/containers/new")} className="gap-2">
                 <Plus className="w-4 h-4" />
                 Créer un conteneur
@@ -182,10 +263,10 @@ const Containers = () => {
       )}
 
       {/* Containers Grid/List */}
-      {!loading && filteredContainers.length > 0 && (
+      {!loading && containers.length > 0 && (
         <>
           <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-4" : "space-y-3"}>
-            {filteredContainers.map((container, index) => (
+            {containers.map((container, index) => (
             <Card
               key={container.id}
               className="p-4 hover:shadow-md transition-all cursor-pointer group"

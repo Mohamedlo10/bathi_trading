@@ -1,5 +1,6 @@
 // Interface Client (correspond EXACTEMENT à la table SQL)
 export interface Client {
+  data(data: any): unknown;
   id: string; // UUID dans la DB
   full_name: string; // VARCHAR(255) NOT NULL
   telephone: string; // VARCHAR(50) NOT NULL

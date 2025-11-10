@@ -60,6 +60,16 @@ const ContainerNew = () => {
       newErrors.date_chargement = "La date de chargement est requise";
     }
 
+    // Validation de la date d'arrivée
+    if (formData.date_arrivee && formData.date_chargement) {
+      const dateChargement = new Date(formData.date_chargement);
+      const dateArrivee = new Date(formData.date_arrivee);
+      
+      if (dateArrivee < dateChargement) {
+        newErrors.date_arrivee = "La date d'arrivée ne peut pas précéder la date de chargement";
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -231,7 +241,17 @@ const ContainerNew = () => {
                   type="date"
                   value={formData.date_arrivee}
                   onChange={(e) => handleChange("date_arrivee", e.target.value)}
+                  className={errors.date_arrivee ? "border-destructive" : ""}
+                  min={formData.date_chargement || undefined}
                 />
+                {errors.date_arrivee && (
+                  <p className="text-sm text-destructive">{errors.date_arrivee}</p>
+                )}
+                {formData.date_chargement && (
+                  <p className="text-xs text-muted-foreground">
+                    La date d'arrivée doit être postérieure au {new Date(formData.date_chargement).toLocaleDateString('fr-FR')}
+                  </p>
+                )}
               </div>
 
               {/* Compagnie de transit */}

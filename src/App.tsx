@@ -13,6 +13,8 @@ import ContainerDetailsPage from "./pages/ContainerDetailsPage";
 import ContainerNew from "./pages/ContainerNew";
 import ContainerEdit from "./pages/ContainerEdit";
 import Clients from "./pages/Clients";
+import ClientDetailsPage from "./pages/ClientDetailsPage";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -76,7 +78,12 @@ const App = () => (
             } />
             <Route path="/clients/:id" element={
               <ProtectedRoute>
-                <AppLayout><Dashboard /></AppLayout>
+                <AppLayout><ClientDetailsPage /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/settings" element={
+              <ProtectedRoute>
+                <AppLayout><Settings /></AppLayout>
               </ProtectedRoute>
             } />
             

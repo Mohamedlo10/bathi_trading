@@ -45,6 +45,8 @@ BEGIN
     FROM (
       SELECT 
         c.id,
+        c.id_client,
+        c.id_container,
         c.description,
         c.nb_pieces,
         c.poids,
@@ -52,6 +54,7 @@ BEGIN
         c.montant,
         c.statut,
         c.created_at,
+        co.numero_conteneur as container_numero,
         json_build_object(
           ''id'', cl.id,
           ''full_name'', cl.full_name,
