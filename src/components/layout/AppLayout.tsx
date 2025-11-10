@@ -97,7 +97,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <img 
                   src="/logo1.jpeg" 
                   alt="Bathi Trading Logo" 
-                  className="w-12 h-12 object-cover group-hover:scale-105"
+                  className="w-10 h-10 object-cover group-hover:scale-105"
                 />
                 <div className="absolute inset-0 " />
               </div>

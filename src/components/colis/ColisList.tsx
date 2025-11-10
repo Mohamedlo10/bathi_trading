@@ -1,6 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Edit, Trash2, Package } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Edit, Trash2, Package, DollarSign } from "lucide-react";
 import type { Colis } from "@/types/colis";
 import { useNavigate } from "react-router";
 
@@ -143,7 +144,7 @@ function ColisItem({
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
           <h4 className="text-sm text-gray-700 truncate">
             {colis.description || "Colis sans description"}
           </h4>
@@ -154,6 +155,14 @@ function ColisItem({
           >
             {getStatutLabel(colis.statut)}
           </span>
+          
+          {/* Badge Prix CBM */}
+          {colis.prix_cbm_info.prix_cbm && (
+            <Badge variant="secondary" className="gap-1 text-xs">
+              <DollarSign className="w-3 h-3" />
+              {colis.prix_cbm_info.prix_cbm.toLocaleString()} FCFA/m³
+            </Badge>
+          )}
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -174,10 +183,19 @@ function ColisItem({
           <div>
             <span className="text-muted-foreground">Montant:</span>
             <span className="ml-2 font-mono font-bold">
-              {(colis.montant || 0).toLocaleString()}FCFA
+              {(colis.montant || 0).toLocaleString()} FCFA
             </span>
           </div>
         </div>
+        
+        {/* Détail du calcul si prix CBM disponible */}
+        {colis.prix_cbm && (
+          <div className="mt-2 text-xs text-muted-foreground">
+            <span className="font-mono">
+              {(colis.cbm || 0).toFixed(3)} m³ × {colis.prix_cbm.prix_cbm.toLocaleString()} FCFA/m³ = {(colis.montant || 0).toLocaleString()} FCFA
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Actions */}

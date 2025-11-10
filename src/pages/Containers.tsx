@@ -149,7 +149,7 @@ const Containers = () => {
                 className="pl-11"
               />
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            {/* <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Statut" />
               </SelectTrigger>
@@ -160,7 +160,7 @@ const Containers = () => {
                 <SelectItem value="arrive">Arrivé</SelectItem>
                 <SelectItem value="livre">Livré</SelectItem>
               </SelectContent>
-            </Select>
+            </Select> */}
             <Button
               variant="outline"
               onClick={() => setShowFilters(!showFilters)}

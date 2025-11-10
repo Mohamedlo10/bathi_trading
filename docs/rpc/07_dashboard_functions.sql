@@ -70,7 +70,16 @@ BEGIN
     'containers_actifs', v_containers_actifs,
     'colis_non_payes', v_colis_non_payes,
     'avg_cbm_per_container', ROUND(v_avg_cbm_per_container, 2),
-    'taux_remplissage_moyen', ROUND((v_avg_cbm_per_container / 70) * 100, 2)
+    'taux_remplissage_moyen', ROUND(
+      (SELECT AVG(
+        (total_cbm / CASE 
+          WHEN type_conteneur = '20pieds' THEN 33
+          WHEN type_conteneur = '40pieds' THEN 67
+          ELSE 70
+        END) * 100
+      ) FROM container WHERE total_cbm > 0),
+      2
+    )
   );
 
   RETURN json_build_object(
@@ -104,28 +113,35 @@ BEGIN
   END IF;
 
   -- Récupérer les conteneurs récents
-  SELECT json_agg(
-    json_build_object(
-      'id', c.id,
-      'nom', c.nom,
-      'numero_conteneur', c.numero_conteneur,
-      'date_arrivee', c.date_arrivee,
-      'date_chargement', c.date_chargement,
-      'total_cbm', c.total_cbm,
-      'total_ca', c.total_ca,
-      'pays_origine', p.nom,
-      'taux_remplissage_pct', ROUND((c.total_cbm / 70) * 100, 2),
-      'nb_colis', (
+  SELECT json_agg(row_to_json(t))
+  INTO v_result
+  FROM (
+    SELECT
+      c.id,
+      c.nom,
+      c.numero_conteneur,
+      c.date_arrivee,
+      c.date_chargement,
+      c.total_cbm,
+      c.total_ca,
+      p.nom as pays_origine,
+      ROUND((c.total_cbm / 
+        CASE 
+          WHEN c.type_conteneur = '20pieds' THEN 33
+          WHEN c.type_conteneur = '40pieds' THEN 67
+          ELSE 70
+        END
+      ) * 100, 2) as taux_remplissage_pct,
+      (
         SELECT COUNT(*)
         FROM colis
         WHERE id_container = c.id
-      )
-    ) ORDER BY c.created_at DESC
-  ) INTO v_result
-  FROM container c
-  LEFT JOIN pays p ON c.pays_origine_id = p.id
-  ORDER BY c.created_at DESC
-  LIMIT p_limit;
+      ) as nb_colis
+    FROM container c
+    LEFT JOIN pays p ON c.pays_origine_id = p.id
+    ORDER BY c.created_at DESC
+    LIMIT p_limit
+  ) t;
 
   RETURN json_build_object(
     'data', COALESCE(v_result, '[]'::json),
@@ -224,17 +240,19 @@ BEGIN
   END IF;
 
   -- Récupérer les stats par pays
-  SELECT json_agg(
-    json_build_object(
-      'pays', COALESCE(p.nom, 'Non défini'),
-      'nb_containers', COUNT(c.id),
-      'total_cbm', COALESCE(SUM(c.total_cbm), 0),
-      'total_ca', COALESCE(SUM(c.total_ca), 0)
-    ) ORDER BY COUNT(c.id) DESC
-  ) INTO v_result
-  FROM container c
-  LEFT JOIN pays p ON c.pays_origine_id = p.id
-  GROUP BY p.nom;
+  SELECT json_agg(row_to_json(t))
+  INTO v_result
+  FROM (
+    SELECT
+      COALESCE(p.nom, 'Non défini') as pays,
+      COUNT(c.id) as nb_containers,
+      COALESCE(SUM(c.total_cbm), 0) as total_cbm,
+      COALESCE(SUM(c.total_ca), 0) as total_ca
+    FROM container c
+    LEFT JOIN pays p ON c.pays_origine_id = p.id
+    GROUP BY p.nom
+    ORDER BY COUNT(c.id) DESC
+  ) t;
 
   RETURN json_build_object(
     'data', COALESCE(v_result, '[]'::json),
@@ -267,23 +285,24 @@ BEGIN
   END IF;
 
   -- Récupérer les top clients
-  SELECT json_agg(
-    json_build_object(
-      'client_id', cl.id,
-      'client_name', cl.full_name,
-      'telephone', cl.telephone,
-      'nb_colis', COUNT(c.id),
-      'total_montant', COALESCE(SUM(c.montant), 0),
-      'total_cbm', COALESCE(SUM(c.cbm), 0),
-      'avg_montant_per_colis', COALESCE(AVG(c.montant), 0)
-    ) ORDER BY COALESCE(SUM(c.montant), 0) DESC
-  ) INTO v_result
-  FROM client cl
-  LEFT JOIN colis c ON c.id_client = cl.id
-  GROUP BY cl.id, cl.full_name, cl.telephone
-  HAVING COUNT(c.id) > 0
-  ORDER BY COALESCE(SUM(c.montant), 0) DESC
-  LIMIT p_limit;
+  SELECT json_agg(row_to_json(t))
+  INTO v_result
+  FROM (
+    SELECT
+      cl.id as client_id,
+      cl.full_name as client_name,
+      cl.telephone,
+      COUNT(c.id) as nb_colis,
+      COALESCE(SUM(c.montant), 0) as total_montant,
+      COALESCE(SUM(c.cbm), 0) as total_cbm,
+      COALESCE(AVG(c.montant), 0) as avg_montant_per_colis
+    FROM client cl
+    LEFT JOIN colis c ON c.id_client = cl.id
+    GROUP BY cl.id, cl.full_name, cl.telephone
+    HAVING COUNT(c.id) > 0
+    ORDER BY COALESCE(SUM(c.montant), 0) DESC
+    LIMIT p_limit
+  ) t;
 
   RETURN json_build_object(
     'data', COALESCE(v_result, '[]'::json),
@@ -368,9 +387,21 @@ BEGIN
   WITH fill_ranges AS (
     SELECT 
       CASE 
-        WHEN (total_cbm / 70) * 100 <= 25 THEN '0-25%'
-        WHEN (total_cbm / 70) * 100 <= 50 THEN '26-50%'
-        WHEN (total_cbm / 70) * 100 <= 75 THEN '51-75%'
+        WHEN (total_cbm / CASE 
+          WHEN type_conteneur = '20pieds' THEN 33
+          WHEN type_conteneur = '40pieds' THEN 67
+          ELSE 70
+        END) * 100 <= 25 THEN '0-25%'
+        WHEN (total_cbm / CASE 
+          WHEN type_conteneur = '20pieds' THEN 33
+          WHEN type_conteneur = '40pieds' THEN 67
+          ELSE 70
+        END) * 100 <= 50 THEN '26-50%'
+        WHEN (total_cbm / CASE 
+          WHEN type_conteneur = '20pieds' THEN 33
+          WHEN type_conteneur = '40pieds' THEN 67
+          ELSE 70
+        END) * 100 <= 75 THEN '51-75%'
         ELSE '76-100%'
       END as range,
       COUNT(*) as nb_containers,
@@ -379,27 +410,41 @@ BEGIN
     FROM container
     GROUP BY 
       CASE 
-        WHEN (total_cbm / 70) * 100 <= 25 THEN '0-25%'
-        WHEN (total_cbm / 70) * 100 <= 50 THEN '26-50%'
-        WHEN (total_cbm / 70) * 100 <= 75 THEN '51-75%'
+        WHEN (total_cbm / CASE 
+          WHEN type_conteneur = '20pieds' THEN 33
+          WHEN type_conteneur = '40pieds' THEN 67
+          ELSE 70
+        END) * 100 <= 25 THEN '0-25%'
+        WHEN (total_cbm / CASE 
+          WHEN type_conteneur = '20pieds' THEN 33
+          WHEN type_conteneur = '40pieds' THEN 67
+          ELSE 70
+        END) * 100 <= 50 THEN '26-50%'
+        WHEN (total_cbm / CASE 
+          WHEN type_conteneur = '20pieds' THEN 33
+          WHEN type_conteneur = '40pieds' THEN 67
+          ELSE 70
+        END) * 100 <= 75 THEN '51-75%'
         ELSE '76-100%'
       END
   )
-  SELECT json_agg(
-    json_build_object(
-      'range', range,
-      'nb_containers', nb_containers,
-      'avg_cbm', ROUND(avg_cbm, 2),
-      'avg_ca', ROUND(avg_ca, 2)
-    ) ORDER BY 
+  SELECT json_agg(row_to_json(t))
+  INTO v_result
+  FROM (
+    SELECT
+      range,
+      nb_containers,
+      ROUND(avg_cbm, 2) as avg_cbm,
+      ROUND(avg_ca, 2) as avg_ca
+    FROM fill_ranges
+    ORDER BY 
       CASE range
         WHEN '0-25%' THEN 1
         WHEN '26-50%' THEN 2
         WHEN '51-75%' THEN 3
         WHEN '76-100%' THEN 4
       END
-  ) INTO v_result
-  FROM fill_ranges;
+  ) t;
 
   RETURN json_build_object(
     'data', COALESCE(v_result, '[]'::json),

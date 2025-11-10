@@ -316,6 +316,7 @@ const ClientDetailsPage = () => {
                   <th className="text-left p-3 font-semibold text-sm">Container</th>
                   <th className="text-center p-3 font-semibold text-sm">Poids</th>
                   <th className="text-center p-3 font-semibold text-sm">CBM</th>
+                  <th className="text-center p-3 font-semibold text-sm">Prix/m³</th>
                   <th className="text-center p-3 font-semibold text-sm">Montant</th>
                   <th className="text-center p-3 font-semibold text-sm">Statut</th>
                   <th className="text-center p-3 font-semibold text-sm">Date</th>
@@ -324,14 +325,14 @@ const ClientDetailsPage = () => {
               <tbody className="divide-y">
                 {loadingColis ? (
                   <tr>
-                    <td colSpan={8} className="p-12 text-center">
+                    <td colSpan={9} className="p-12 text-center">
                       <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />
                     </td>
                   </tr>
                 ) : colis.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="p-12 text-center text-muted-foreground"
                     >
                       <Box className="w-12 h-12 mx-auto mb-3 opacity-20" />
@@ -368,6 +369,15 @@ const ClientDetailsPage = () => {
                       </td>
                       <td className="p-3 text-center">
                         <span className="font-mono">{item.cbm} m³</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        {item.prix_cbm ? (
+                          <span className="font-mono text-xs bg-primary/10 px-2 py-1 rounded">
+                            {item.prix_cbm.prix_cbm.toLocaleString()} FCFA
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">N/A</span>
+                        )}
                       </td>
                       <td className="p-3 text-center">
                         <span className="font-mono font-semibold">

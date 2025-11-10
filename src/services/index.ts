@@ -6,3 +6,4 @@ export { colisService, ColisService } from "./colis.service";
 export { cbmService, CBMService } from "./cbm.service";
 export { paysService, PaysService } from "./pays.service";
 export { searchService, SearchService } from "./search.service";
+export { dashboardService } from "./dashboard.service";

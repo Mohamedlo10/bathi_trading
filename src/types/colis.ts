@@ -11,6 +11,10 @@ export interface Colis {
   poids: number; // NUMERIC(10,2) NOT NULL
   cbm: number; // NUMERIC(10,3) NOT NULL (volume en m³)
   prix_cbm_id: number; // NOT NULL (FK vers table cbm)
+  prix_cbm_info: {
+    id: number;
+    prix_cbm: number;
+  };
   montant: number; // NUMERIC(10,2) NOT NULL (calculé auto)
   statut: StatutColis;
   created_at: string;
