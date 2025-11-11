@@ -69,8 +69,11 @@ export default function Accounts() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [saving, setSaving] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
 
   const [formData, setFormData] = useState({
     email: "",
@@ -253,6 +256,62 @@ export default function Accounts() {
     setShowDeleteDialog(true);
   };
 
+  const openPasswordDialog = (user: User) => {
+    setSelectedUser(user);
+    setNewPassword("");
+    setCurrentPassword("");
+    setShowPasswordDialog(true);
+  };
+
+  // Changer le mot de passe
+  const handleChangePassword = async () => {
+    if (!selectedUser || !newPassword || !currentPassword) {
+      toast.error("Veuillez remplir tous les champs");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast.error("Le nouveau mot de passe doit contenir au moins 6 caractères");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // 1. Vérifier le mot de passe actuel de l'admin
+      if (!currentUser?.email) {
+        throw new Error("Utilisateur non connecté");
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: currentUser.email,
+        password: currentPassword,
+      });
+
+      if (signInError) {
+        throw new Error("Mot de passe actuel incorrect");
+      }
+
+      // 2. Changer le mot de passe de l'utilisateur sélectionné
+      const { error } = await userAdminService.resetPassword(
+        selectedUser.auth_uid,
+        newPassword
+      );
+
+      if (error) throw new Error(error);
+
+      toast.success("Mot de passe modifié avec succès");
+      setShowPasswordDialog(false);
+      setSelectedUser(null);
+      setNewPassword("");
+      setCurrentPassword("");
+    } catch (error: any) {
+      console.error("Erreur lors du changement de mot de passe:", error);
+      toast.error(error.message || "Erreur lors du changement de mot de passe");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Filtrer les utilisateurs
   const filteredUsers = users.filter((user) =>
     user.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -376,8 +435,17 @@ export default function Accounts() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        onClick={() => openPasswordDialog(user)}
+                        title="Changer le mot de passe"
+                      >
+                        <Key className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => openEditDialog(user)}
                         disabled={user.id === currentUser?.id}
+                        title="Modifier"
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
@@ -387,6 +455,7 @@ export default function Accounts() {
                         onClick={() => openDeleteDialog(user)}
                         disabled={user.id === currentUser?.id}
                         className="text-destructive hover:text-destructive"
+                        title="Désactiver"
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -563,6 +632,95 @@ export default function Accounts() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog changement de mot de passe */}
+      <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Changer le mot de passe</DialogTitle>
+            <DialogDescription>
+              Définir un nouveau mot de passe pour <strong>{selectedUser?.full_name}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="current_password">
+                Votre mot de passe actuel <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="current_password"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                Pour confirmer votre identité
+              </p>
+            </div>
+
+            <div className="h-px bg-border" />
+
+            <div className="space-y-2">
+              <Label htmlFor="new_password">
+                Nouveau mot de passe pour l'utilisateur <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="new_password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                Minimum 6 caractères
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 p-4 border border-amber-200 dark:border-amber-900">
+              <div className="flex gap-2">
+                <Key className="w-5 h-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-amber-800 dark:text-amber-300">
+                  <p className="font-medium mb-1">Important</p>
+                  <p className="text-xs">
+                    L'utilisateur devra utiliser ce nouveau mot de passe lors de sa prochaine connexion.
+                    Assurez-vous de le lui communiquer de manière sécurisée.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowPasswordDialog(false);
+                setNewPassword("");
+                setCurrentPassword("");
+              }}
+            >
+              Annuler
+            </Button>
+            <Button onClick={handleChangePassword} disabled={saving || !newPassword || !currentPassword}>
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Modification...
+                </>
+              ) : (
+                <>
+                  <Key className="w-4 h-4 mr-2" />
+                  Changer le mot de passe
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
