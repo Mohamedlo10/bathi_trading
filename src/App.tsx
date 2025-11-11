@@ -15,6 +15,7 @@ import ContainerEdit from "./pages/ContainerEdit";
 import Clients from "./pages/Clients";
 import ClientDetailsPage from "./pages/ClientDetailsPage";
 import Settings from "./pages/Settings";
+import Accounts from "./pages/Accounts";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -84,6 +85,11 @@ const App = () => (
             <Route path="/settings" element={
               <ProtectedRoute>
                 <AppLayout><Settings /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/accounts" element={
+              <ProtectedRoute>
+                <AppLayout><Accounts /></AppLayout>
               </ProtectedRoute>
             } />
             
