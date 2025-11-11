@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { dashboardService } from "@/services/dashboard.service";
 import type {
   DashboardStats,
@@ -22,6 +22,10 @@ export function useDashboard() {
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Ref pour suivre si les données ont déjà été chargées
+  const hasLoadedRef = useRef(false);
+  const currentAuthUidRef = useRef<string | null>(null);
 
   /**
    * Charger toutes les données du dashboard
@@ -72,9 +76,24 @@ export function useDashboard() {
     }
   };
 
-  // Charger les données au montage
+  // Charger les données au montage - une seule fois par session utilisateur
   useEffect(() => {
-    fetchDashboardData();
+    // Ne charger que si :
+    // 1. L'utilisateur est connecté
+    // 2. Les données n'ont pas encore été chargées OU l'utilisateur a changé
+    const shouldLoad = user?.auth_uid && 
+      (!hasLoadedRef.current || currentAuthUidRef.current !== user.auth_uid);
+    
+    if (shouldLoad) {
+      currentAuthUidRef.current = user.auth_uid;
+      hasLoadedRef.current = true;
+      fetchDashboardData();
+    } else if (!user?.auth_uid) {
+      // Si l'utilisateur se déconnecte, réinitialiser
+      hasLoadedRef.current = false;
+      currentAuthUidRef.current = null;
+      setLoading(false);
+    }
   }, [user?.auth_uid]);
 
   return {
