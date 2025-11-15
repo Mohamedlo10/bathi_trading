@@ -8,7 +8,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { AppLayout } from "@/components/layout/AppLayout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import Containers from "./pages/Containers";
+import ContainersDataTable from "./pages/ContainersDataTable";
 import ContainerDetailsPage from "./pages/ContainerDetailsPage";
 import ContainerNew from "./pages/ContainerNew";
 import ContainerEdit from "./pages/ContainerEdit";
@@ -44,7 +44,7 @@ const App = () => (
             } />
             <Route path="/containers" element={
               <ProtectedRoute>
-                <AppLayout><Containers /></AppLayout>
+                <AppLayout><ContainersDataTable /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/containers/:id" element={

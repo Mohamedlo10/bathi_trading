@@ -11,6 +11,7 @@ export interface Container {
   numero_conteneur: string;
   pays_origine_id: number;
   pays_origine?: string; // Nom du pays (jointure)
+  pays_origine_code?: string; // Code du pays (FR, SN, etc.)
   type_conteneur: TypeConteneur;
   date_chargement: string;
   date_arrivee?: string | null;

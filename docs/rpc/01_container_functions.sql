@@ -46,6 +46,7 @@ BEGIN
         c.created_at,
         p.nom as pays_origine,
         p.id as pays_origine_id,
+        p.code as pays_origine_code,
         (
           SELECT COUNT(DISTINCT id_client)
           FROM colis
@@ -59,14 +60,14 @@ BEGIN
         ROUND((c.total_cbm / 70) * 100, 2) as taux_remplissage_pct
       FROM container c
       LEFT JOIN pays p ON c.pays_origine_id = p.id
-      WHERE 1=1
+      WHERE c.is_deleted = false
   ';
 
   v_count_query := '
     SELECT COUNT(*)
     FROM container c
     LEFT JOIN pays p ON c.pays_origine_id = p.id
-    WHERE 1=1
+    WHERE c.is_deleted = false
   ';
 
   -- Ajouter les filtres
@@ -155,6 +156,7 @@ BEGIN
     'numero_conteneur', c.numero_conteneur,
     'pays_origine_id', c.pays_origine_id,
     'pays_origine', p.nom,
+    'pays_origine_code', p.code,
     'type_conteneur', c.type_conteneur,
     'date_arrivee', c.date_arrivee,
     'date_chargement', c.date_chargement,

@@ -19,6 +19,7 @@ import {
   X
 } from "lucide-react";
 import { useContainers } from "@/hooks/use-containers";
+import { usePays } from "@/hooks/use-pays";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
@@ -41,6 +42,7 @@ const Containers = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [paysFilter, setPaysFilter] = useState<string>("all");
   const [dateDebut, setDateDebut] = useState<string>("");
   const [dateFin, setDateFin] = useState<string>("");
   const [showFilters, setShowFilters] = useState(false);
@@ -55,29 +57,33 @@ const Containers = () => {
     pagination 
   } = useContainers();
 
+  const { pays, loading: paysLoading } = usePays();
+
   // Charger les conteneurs avec filtres
   useEffect(() => {
     const filters = {
       search: searchQuery || undefined,
       statut: statusFilter !== "all" ? (statusFilter as any) : undefined,
+      pays_origine_id: paysFilter !== "all" ? parseInt(paysFilter) : undefined,
       date_debut: dateDebut || undefined,
       date_fin: dateFin || undefined,
     };
     
     fetchContainers(filters, { page: currentPage, limit: itemsPerPage });
-  }, [searchQuery, statusFilter, dateDebut, dateFin, currentPage, itemsPerPage]);
+  }, [searchQuery, statusFilter, paysFilter, dateDebut, dateFin, currentPage, itemsPerPage]);
 
   // Réinitialiser les filtres
   const resetFilters = () => {
     setSearchQuery("");
     setStatusFilter("all");
+    setPaysFilter("all");
     setDateDebut("");
     setDateFin("");
     setCurrentPage(1);
   };
 
   // Vérifier si des filtres sont actifs
-  const hasActiveFilters = searchQuery || statusFilter !== "all" || dateDebut || dateFin;
+  const hasActiveFilters = searchQuery || statusFilter !== "all" || paysFilter !== "all" || dateDebut || dateFin;
 
   const getCBMColor = (cbm: number, max: number) => {
     const percentage = (cbm / max) * 100;
@@ -195,7 +201,25 @@ const Containers = () => {
           {/* Filtres avancés */}
           {showFilters && (
             <div className="pt-4 border-t space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Filtre par pays */}
+                <div className="space-y-2">
+                  <Label htmlFor="pays-filter">Pays d'origine</Label>
+                  <Select value={paysFilter} onValueChange={setPaysFilter}>
+                    <SelectTrigger id="pays-filter">
+                      <SelectValue placeholder="Tous les pays" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      <SelectItem value="all">Tous les pays</SelectItem>
+                      {!paysLoading && pays.map((p) => (
+                        <SelectItem key={p.id} value={p.id.toString()}>
+                          {p.nom}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="date-debut">Date de chargement (début)</Label>
                   <Input

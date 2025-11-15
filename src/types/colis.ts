@@ -8,14 +8,16 @@ export interface Colis {
   id_container: number;
   description?: string | null;
   nb_pieces: number; // NOT NULL
-  poids: number; // NUMERIC(10,2) NOT NULL
-  cbm: number; // NUMERIC(10,3) NOT NULL (volume en m³)
-  prix_cbm_id: number; // NOT NULL (FK vers table cbm)
-  prix_cbm_info: {
+  poids?: number | null; // NUMERIC(10,2) NULLABLE
+  cbm?: number | null; // NUMERIC(10,3) NULLABLE (volume en m³)
+  prix_cbm_id?: number | null; // NULLABLE (FK vers table cbm)
+  prix_cbm_info?: {
     id: number;
     prix_cbm: number;
   };
-  montant: number; // NUMERIC(10,2) NOT NULL (calculé auto)
+  montant?: number | null; // NUMERIC(10,2) NULLABLE (calculé auto)
+  montant_reel?: number | null; // NUMERIC NULLABLE (montant réel saisi)
+  pourcentage_reduction?: number | null; // NUMERIC NULLABLE (% de réduction)
   statut: StatutColis;
   created_at: string;
   
@@ -44,15 +46,27 @@ export interface CreateColisInput {
   id_container: number; // Requis
   description?: string;
   nb_pieces: number; // Requis (défaut 1)
-  poids: number; // Requis
-  cbm: number; // Requis (volume en m³)
-  prix_cbm_id: number; // Requis
+  poids?: number; // Optionnel
+  cbm?: number; // Optionnel (volume en m³)
+  prix_cbm_id?: number; // Optionnel
+  montant?: number; // Optionnel - calculé auto si CBM fourni
+  montant_reel?: number; // Optionnel (montant réel)
+  pourcentage_reduction?: number; // Optionnel (% de réduction)
   statut?: StatutColis;
 }
 
 // Données pour mettre à jour un colis
 export interface UpdateColisInput extends Partial<CreateColisInput> {
   id: number;
+}
+
+// Données pour compléter les détails d'un colis
+export interface UpdateColisDetailsInput {
+  id: number;
+  cbm?: number;
+  poids?: number;
+  montant_reel?: number;
+  pourcentage_reduction?: number;
 }
 
 // Filtres pour la recherche de colis

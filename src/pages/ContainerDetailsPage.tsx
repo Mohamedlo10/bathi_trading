@@ -25,6 +25,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { ColisList } from "@/components/colis/ColisList";
 import { ColisForm } from "@/components/colis/ColisForm";
+import { ColisFormStepper } from "@/components/colis/ColisFormStepper";
+import { ColisDetailsModal } from "@/components/colis/ColisDetailsModal";
+import { ContainerStatistics } from "@/components/containers/ContainerStatistics";
 import {
   Dialog,
   DialogContent,
@@ -52,6 +55,11 @@ const ContainerDetailsPage = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showColisDialog, setShowColisDialog] = useState(false);
   const [selectedColis, setSelectedColis] = useState<Colis | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [colisToComplete, setColisToComplete] = useState<Colis | null>(null);
+  const [showDeleteColisDialog, setShowDeleteColisDialog] = useState(false);
+  const [colisToDelete, setColisToDelete] = useState<Colis | null>(null);
+  const [isDeletingColis, setIsDeletingColis] = useState(false);
   
   const { 
     getContainerById, 
@@ -67,6 +75,7 @@ const ContainerDetailsPage = () => {
     createColis,
     updateColis,
     deleteColis: deleteColisAction,
+    fetchColis,
   } = useColis(Number(id));
 
   const [container, setContainer] = useState<any>(null);
@@ -115,16 +124,29 @@ const ContainerDetailsPage = () => {
     setShowColisDialog(true);
   };
 
-  const handleDeleteColis = async (colis: Colis) => {
-    if (confirm(`Supprimer le colis #${colis.id} ?`)) {
-      const success = await deleteColisAction(colis.id);
-      if (success) {
-        toast.success("Colis supprimé");
-        // Recharger le conteneur pour mettre à jour les stats
-        await loadContainer();
-      } else {
-        toast.error("Erreur lors de la suppression");
-      }
+  const handleDeleteColis = (colis: Colis) => {
+    setColisToDelete(colis);
+    setShowDeleteColisDialog(true);
+  };
+
+  const confirmDeleteColis = async () => {
+    if (!colisToDelete) return;
+    
+    setIsDeletingColis(true);
+    const success = await deleteColisAction(colisToDelete.id);
+    setIsDeletingColis(false);
+    
+    if (success) {
+      toast.success("Colis supprimé");
+      setShowDeleteColisDialog(false);
+      setColisToDelete(null);
+      // Recharger le conteneur pour mettre à jour les stats
+      await Promise.all([
+        fetchColis(),
+        loadContainer()
+      ]);
+    } else {
+      toast.error("Erreur lors de la suppression");
     }
   };
 
@@ -153,6 +175,22 @@ const ContainerDetailsPage = () => {
         toast.error("Erreur lors de la création");
       }
     }
+  };
+
+  const handleCompleteDetails = (colis: Colis) => {
+    setColisToComplete(colis);
+    setShowDetailsModal(true);
+  };
+
+  const handleSaveDetails = async () => {
+    // Rafraîchir la liste après la mise à jour
+    setShowDetailsModal(false);
+    setColisToComplete(null);
+    // Recharger les colis ET le container pour mettre à jour les stats
+    await Promise.all([
+      fetchColis(),
+      loadContainer()
+    ]);
   };
 
   const getCBMColor = (cbm: number, max: number) => {
@@ -363,6 +401,7 @@ const ContainerDetailsPage = () => {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="colis">Colis ({container.nb_colis || 0})</TabsTrigger>
+          <TabsTrigger value="statistiques">Statistiques</TabsTrigger>
           <TabsTrigger value="infos">Informations</TabsTrigger>
           <TabsTrigger value="historique">Historique</TabsTrigger>
         </TabsList>
@@ -382,9 +421,14 @@ const ContainerDetailsPage = () => {
               colis={colis}
               onEdit={handleEditColis}
               onDelete={handleDeleteColis}
+              onCompleteDetails={handleCompleteDetails}
               groupByClient={true}
             />
           )}
+        </TabsContent>
+
+        <TabsContent value="statistiques" className="mt-6">
+          <ContainerStatistics containerId={Number(id)} />
         </TabsContent>
 
         <TabsContent value="infos" className="mt-6">
@@ -457,20 +501,34 @@ const ContainerDetailsPage = () => {
                 : "Ajoutez un nouveau colis à ce conteneur"}
             </DialogDescription>
           </DialogHeader>
-          <ColisForm
-            colis={selectedColis}
-            container_id={Number(id)}
-            onSubmit={handleSubmitColis}
-            onCancel={() => {
-              setShowColisDialog(false);
-              setSelectedColis(null);
-            }}
-            loading={colisLoading}
-          />
+          
+          {/* Utiliser le stepper pour les nouveaux colis, l'ancien form pour l'édition */}
+          {selectedColis ? (
+            <ColisForm
+              colis={selectedColis}
+              container_id={Number(id)}
+              onSubmit={handleSubmitColis}
+              onCancel={() => {
+                setShowColisDialog(false);
+                setSelectedColis(null);
+              }}
+              loading={colisLoading}
+            />
+          ) : (
+            <ColisFormStepper
+              container_id={Number(id)}
+              onSubmit={handleSubmitColis}
+              onCancel={() => {
+                setShowColisDialog(false);
+                setSelectedColis(null);
+              }}
+              loading={colisLoading}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
-      {/* Delete Dialog */}
+      {/* Delete Container Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -499,6 +557,55 @@ const ContainerDetailsPage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Delete Colis Dialog */}
+      <AlertDialog open={showDeleteColisDialog} onOpenChange={setShowDeleteColisDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmer la suppression du colis</AlertDialogTitle>
+            <AlertDialogDescription>
+              {colisToDelete && (
+                <div className="space-y-2">
+                  <p>Êtes-vous sûr de vouloir supprimer ce colis ?</p>
+                  <div className="p-3 bg-muted rounded-lg space-y-1 text-sm">
+                    <div><strong>Client:</strong> {colisToDelete.client?.full_name}</div>
+                    <div><strong>Description:</strong> {colisToDelete.description || "Aucune"}</div>
+                    {colisToDelete.cbm && <div><strong>Volume:</strong> {colisToDelete.cbm.toFixed(3)} m³</div>}
+                  </div>
+                  <p className="text-destructive font-medium">Cette action est irréversible.</p>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingColis}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteColis}
+              disabled={isDeletingColis}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingColis ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Suppression...
+                </>
+              ) : (
+                "Supprimer le colis"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal pour compléter les détails du colis */}
+      {colisToComplete && (
+        <ColisDetailsModal
+          colis={colisToComplete}
+          open={showDetailsModal}
+          onOpenChange={setShowDetailsModal}
+          onSuccess={handleSaveDetails}
+        />
+      )}
     </div>
   );
 };

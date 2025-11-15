@@ -56,16 +56,16 @@ export function ColisForm({
     id_container: container_id,
     description: "",
     nb_pieces: 1,
-    poids: 0,
-    cbm: 0,
+    poids: undefined, // Optionnel
+    cbm: undefined, // Optionnel
     prix_cbm_id: 0, // Sera auto-sélectionné par la fonction SQL
     statut: "non_paye",
   });
 
   // Définir les capacités maximales selon le type de conteneur
   const CAPACITES_MAX: Record<TypeConteneur, number> = {
-    "20pieds": 33,
-    "40pieds": 67,
+    "20pieds": 35,
+    "40pieds": 70,
   };
 
   // Charger les informations du conteneur
@@ -143,11 +143,11 @@ export function ColisForm({
   // Calculer la capacité restante et vérifier le dépassement
   const cbmActuel = containerInfo?.total_cbm || 0;
   const cbmAncien = colis?.cbm || 0; // CBM du colis actuel si modification
-  const cbmAjoute = formData.cbm - cbmAncien; // CBM net à ajouter
+  const cbmAjoute = (formData.cbm || 0) - cbmAncien; // CBM net à ajouter
   const cbmApresAjout = cbmActuel + cbmAjoute;
   const capaciteMax = containerInfo ? CAPACITES_MAX[containerInfo.type_conteneur] : 70;
   const cbmRestant = capaciteMax - cbmActuel;
-  const depassementCapacite = cbmApresAjout > capaciteMax;
+  const depassementCapacite = formData.cbm ? cbmApresAjout > capaciteMax : false;
   const tauxRemplissage = containerInfo ? (cbmApresAjout / capaciteMax) * 100 : 0;
 
   // Pré-remplir le formulaire si on modifie un colis
@@ -169,14 +169,14 @@ export function ColisForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Vérifier si un tarif CBM est actif
-    if (!currentCBM && !loadingCBM) {
+    // Si les champs CBM et poids sont remplis, vérifier le CBM actif
+    if ((formData.cbm || formData.poids) && !currentCBM && !loadingCBM) {
       setShowCBMDialog(true);
       return; // Bloquer la soumission et ouvrir le dialog
     }
     
-    // Vérifier la capacité avant soumission
-    if (depassementCapacite) {
+    // Vérifier la capacité avant soumission (seulement si CBM fourni)
+    if (formData.cbm && depassementCapacite) {
       return; // Bloquer la soumission si dépassement
     }
     
@@ -212,74 +212,14 @@ export function ColisForm({
           <span className="text-sm text-muted-foreground">Chargement de la capacité...</span>
         </div>
       ) : containerInfo && (
-        <div className="space-y-3 p-4 bg-muted/50 rounded-lg border">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Package className="w-4 h-4 text-primary" />
-              <span className="text-sm font-medium">Capacité du conteneur</span>
-            </div>
-            <Badge variant={tauxRemplissage >= 90 ? "destructive" : tauxRemplissage >= 70 ? "default" : "secondary"}>
-              {tauxRemplissage.toFixed(1)}%
-            </Badge>
+        <div className="p-3 bg-muted rounded-lg">
+          <div className="flex items-center gap-2 mb-1">
+            <Package className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm font-medium">
+              Capacité du conteneur ({containerInfo.type_conteneur === "20pieds" ? "20 pieds" : "40 pieds"})
+              : {capaciteMax} m³
+            </span>
           </div>
-          
-          {/* Barre de progression */}
-          <div className="space-y-1">
-            <div className="h-2 bg-muted rounded-full overflow-hidden">
-              <div
-                className={`h-full transition-all duration-300 ${
-                  depassementCapacite 
-                    ? "bg-destructive" 
-                    : tauxRemplissage >= 90 
-                    ? "bg-orange-500" 
-                    : "bg-primary"
-                }`}
-                style={{ width: `${Math.min(tauxRemplissage, 100)}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{cbmApresAjout.toFixed(3)} m³ utilisés</span>
-              <span>{capaciteMax} m³ max ({containerInfo.type_conteneur === "20pieds" ? "20 pieds" : "40 pieds"})</span>
-            </div>
-          </div>
-
-          {/* Informations détaillées */}
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="p-2 bg-background rounded">
-              <div className="text-muted-foreground">CBM actuel</div>
-              <div className="font-semibold">{cbmActuel.toFixed(3)} m³</div>
-            </div>
-            <div className="p-2 bg-background rounded">
-              <div className="text-muted-foreground">CBM restant</div>
-              <div className={`font-semibold ${cbmRestant < 5 ? "text-orange-500" : ""}`}>
-                {Math.max(cbmRestant - cbmAjoute, 0).toFixed(3)} m³
-              </div>
-            </div>
-          </div>
-
-          {/* Alerte de dépassement */}
-          {depassementCapacite && formData.cbm > 0 && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                <strong>Capacité dépassée !</strong>
-                <br />
-                Ce colis de <strong>{formData.cbm.toFixed(3)} m³</strong> dépasse la capacité maximale.
-                <br />
-                Il reste seulement <strong>{cbmRestant.toFixed(3)} m³</strong> disponibles.
-              </AlertDescription>
-            </Alert>
-          )}
-          
-          {/* Avertissement proche de la limite */}
-          {!depassementCapacite && tauxRemplissage >= 90 && formData.cbm > 0 && (
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription>
-                Le conteneur sera rempli à <strong>{tauxRemplissage.toFixed(1)}%</strong> après cet ajout.
-              </AlertDescription>
-            </Alert>
-          )}
         </div>
       )}
 
@@ -302,125 +242,141 @@ export function ColisForm({
           }
           placeholder="Description du colis"
           rows={3}
+          disabled={loading}
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        {/* Nombre de pièces */}
-        <div className="space-y-2">
-          <Label htmlFor="nb_pieces">
-            Nombre de pièces <span className="text-destructive">*</span>
-          </Label>
-          <Input
-            id="nb_pieces"
-            type="number"
-            min="1"
-            value={formData.nb_pieces || ""}
-            onChange={(e) =>
-              setFormData({ ...formData, nb_pieces: parseInt(e.target.value) || 1 })
-            }
-            placeholder="1"
-            required
-          />
-        </div>
-
-        {/* Poids */}
-        <div className="space-y-2">
-          <Label htmlFor="poids">
-            Poids (kg) <span className="text-destructive">*</span>
-          </Label>
-          <Input
-            id="poids"
-            type="number"
-            step="0.01"
-            min="0.01"
-            value={formData.poids || ""}
-            onChange={(e) =>
-              setFormData({ ...formData, poids: parseFloat(e.target.value) || 0 })
-            }
-            placeholder="0.00"
-            required
-          />
-        </div>
-      </div>
-
-      {/* Volume CBM */}
+      {/* Nombre de pièces */}
       <div className="space-y-2">
-        <Label htmlFor="cbm">
-          Volume (m³) <span className="text-destructive">*</span>
+        <Label htmlFor="nb_pieces">
+          Nombre de pièces <span className="text-destructive">*</span>
         </Label>
         <Input
-          id="cbm"
+          id="nb_pieces"
           type="number"
-          step="0.001"
-          min="0.001"
-          value={formData.cbm || ""}
+          min="1"
+          value={formData.nb_pieces || ""}
           onChange={(e) =>
-            setFormData({ ...formData, cbm: parseFloat(e.target.value) || 0 })
+            setFormData({ ...formData, nb_pieces: parseInt(e.target.value) || 1 })
           }
-          placeholder="0.000"
+          onFocus={(e) => e.target.select()}
+          placeholder="1"
           required
+          disabled={loading}
         />
-        
-        {/* Affichage du prix CBM actuel */}
-        {loadingCBM ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            Chargement du tarif...
-          </div>
-        ) : currentCBM ? (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="secondary" className="gap-1.5">
-                <DollarSign className="w-3 h-3" />
-                Prix CBM actuel: {currentCBM.prix_cbm.toLocaleString()} FCFA/m³
-              </Badge>
-              <Badge variant="outline" className="gap-1.5 text-xs">
-                <Calendar className="w-3 h-3" />
-                Valide depuis le {new Date(currentCBM.date_debut_validite).toLocaleDateString('fr-FR')}
-              </Badge>
+      </div>
+
+      {/* Si création, permettre de saisir poids et CBM */}
+      {!colis && (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            {/* Poids */}
+            <div className="space-y-2">
+              <Label htmlFor="poids">
+                Poids (kg)
+              </Label>
+              <Input
+                id="poids"
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={formData.poids || ""}
+                onChange={(e) =>
+                  setFormData({ ...formData, poids: parseFloat(e.target.value) || undefined })
+                }
+                placeholder="0.00"
+                disabled={loading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Peut être ajouté plus tard
+              </p>
             </div>
-            
-            {/* Montant estimé */}
-            {formData.cbm > 0 && (
-              <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Info className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-medium text-muted-foreground">
-                      Montant estimé
+
+            {/* Volume CBM */}
+            <div className="space-y-2">
+              <Label htmlFor="cbm">
+                Volume (m³)
+              </Label>
+              <Input
+                id="cbm"
+                type="number"
+                step="0.001"
+                min="0.001"
+                value={formData.cbm || ""}
+                onChange={(e) =>
+                  setFormData({ ...formData, cbm: parseFloat(e.target.value) || undefined })
+                }
+                placeholder="0.000"
+                disabled={loading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Peut être ajouté plus tard
+              </p>
+            </div>
+          </div>
+
+          {/* Affichage du prix CBM actuel */}
+          {loadingCBM ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Chargement du tarif...
+            </div>
+          ) : currentCBM ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="secondary" className="gap-1.5">
+                  <DollarSign className="w-3 h-3" />
+                  Prix CBM actuel: {currentCBM.prix_cbm.toLocaleString()} FCFA/m³
+                </Badge>
+                <Badge variant="outline" className="gap-1.5 text-xs">
+                  <Calendar className="w-3 h-3" />
+                  Valide depuis le {new Date(currentCBM.date_debut_validite).toLocaleDateString('fr-FR')}
+                </Badge>
+              </div>
+              
+              {/* Montant estimé */}
+              {formData.cbm && formData.cbm > 0 && (
+                <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Info className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium text-muted-foreground">
+                        Montant estimé
+                      </span>
+                    </div>
+                    <span className="text-lg font-bold text-primary">
+                      {montantEstime.toLocaleString()} FCFA
                     </span>
                   </div>
-                  <span className="text-lg font-bold text-primary">
-                    {montantEstime.toLocaleString()} FCFA
-                  </span>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formData.cbm} m³ × {currentCBM.prix_cbm.toLocaleString()} FCFA
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {formData.cbm} m³ × {currentCBM.prix_cbm.toLocaleString()} FCFA
-                </p>
-              </div>
-            )}
-          </div>
-        ) : (
-          <Alert variant="destructive" className="mt-2">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              <strong>Aucun tarif CBM actif !</strong>
-              <br />
-              Vous devez activer un tarif CBM pour pouvoir créer des colis.
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowCBMDialog(true)}
-                className="mt-2 w-full"
-              >
-                Activer un tarif CBM
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
-      </div>
+              )}
+            </div>
+          ) : (
+            (formData.cbm && formData.cbm > 0) && (
+              <Alert variant="destructive" className="mt-2">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>Aucun tarif CBM actif !</strong>
+                  <br />
+                  Vous devez activer un tarif CBM pour calculer le montant.
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowCBMDialog(true)}
+                    className="mt-2 w-full"
+                  >
+                    Activer un tarif CBM
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )
+          )}
+        </>
+      )}
 
       {/* Statut */}
       <div className="space-y-2">

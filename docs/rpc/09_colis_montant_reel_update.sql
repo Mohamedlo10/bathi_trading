@@ -1,10 +1,95 @@
 -- =====================================================
--- BATHI TRADING - Fonctions RPC pour les Colis
+-- BATHI TRADING - Mise à jour pour montant_reel et pourcentage_reduction
 -- =====================================================
 
 -- =====================================================
--- FUNCTION: get_colis_list
--- Description: Récupère la liste des colis avec pagination et filtres
+-- TRIGGER: Calculer le montant du colis (MISE À JOUR)
+-- Description: Calcule le montant automatiquement si CBM et prix_cbm_id sont fournis
+-- =====================================================
+CREATE OR REPLACE FUNCTION calculate_colis_montant()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_prix_cbm DECIMAL;
+BEGIN
+    -- Si CBM et prix_cbm_id sont fournis, calculer le montant
+    IF NEW.cbm IS NOT NULL AND NEW.prix_cbm_id IS NOT NULL THEN
+        -- Récupérer le prix CBM
+        SELECT prix_cbm INTO v_prix_cbm 
+        FROM cbm 
+        WHERE id = NEW.prix_cbm_id;
+        
+        -- Calculer le montant (montant calculé = CBM × Prix CBM)
+        NEW.montant := NEW.cbm * v_prix_cbm;
+    ELSE
+        -- Si pas de CBM ou prix_cbm_id, montant NULL
+        NEW.montant := NULL;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Recréer le trigger
+DROP TRIGGER IF EXISTS trigger_calculate_colis_montant ON colis;
+CREATE TRIGGER trigger_calculate_colis_montant
+BEFORE INSERT OR UPDATE ON colis
+FOR EACH ROW
+EXECUTE FUNCTION calculate_colis_montant();
+
+-- =====================================================
+-- TRIGGER: Mettre à jour total_cbm et total_ca du container (MISE À JOUR)
+-- Description: Utilise montant_reel si disponible, sinon montant calculé
+-- =====================================================
+CREATE OR REPLACE FUNCTION update_container_totals()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_container_id INTEGER;
+    v_total_cbm DECIMAL;
+    v_total_ca DECIMAL;
+BEGIN
+    -- Déterminer l'ID du container concerné
+    IF TG_OP = 'DELETE' THEN
+        v_container_id := OLD.id_container;
+    ELSE
+        v_container_id := NEW.id_container;
+    END IF;
+    
+    -- Calculer les nouveaux totaux
+    -- Pour le CA, utiliser montant_reel si disponible, sinon montant calculé
+    SELECT 
+        COALESCE(SUM(cbm), 0),
+        COALESCE(SUM(COALESCE(montant_reel, montant)), 0)
+    INTO v_total_cbm, v_total_ca
+    FROM colis
+    WHERE id_container = v_container_id;
+    
+    -- Vérifier la limite de 70 CBM (seulement si on ajoute/modifie)
+    IF TG_OP != 'DELETE' AND v_total_cbm > 70 THEN
+        RAISE EXCEPTION 'La limite de 70 CBM par conteneur est dépassée. Total actuel: % CBM', v_total_cbm;
+    END IF;
+    
+    -- Mettre à jour le container
+    UPDATE container
+    SET 
+        total_cbm = v_total_cbm,
+        total_ca = v_total_ca,
+        updated_at = NOW()
+    WHERE id = v_container_id;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Recréer le trigger
+DROP TRIGGER IF EXISTS trigger_update_container_totals ON colis;
+CREATE TRIGGER trigger_update_container_totals
+AFTER INSERT OR UPDATE OR DELETE ON colis
+FOR EACH ROW
+EXECUTE FUNCTION update_container_totals();
+
+-- =====================================================
+-- FUNCTION: get_colis_list (MISE À JOUR)
+-- Description: Ajouter montant_reel et pourcentage_reduction
 -- =====================================================
 CREATE OR REPLACE FUNCTION get_colis_list(
   p_auth_uid UUID,
@@ -52,6 +137,8 @@ BEGIN
         c.poids,
         c.cbm,
         c.montant,
+        c.montant_reel,
+        c.pourcentage_reduction,
         c.statut,
         c.created_at,
         co.numero_conteneur as container_numero,
@@ -150,8 +237,8 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =====================================================
--- FUNCTION: get_colis_by_id
--- Description: Récupère un colis par son ID
+-- FUNCTION: get_colis_by_id (MISE À JOUR)
+-- Description: Ajouter montant_reel et pourcentage_reduction
 -- =====================================================
 CREATE OR REPLACE FUNCTION get_colis_by_id(
   p_auth_uid UUID,
@@ -180,6 +267,8 @@ BEGIN
     'poids', c.poids,
     'cbm', c.cbm,
     'montant', c.montant,
+    'montant_reel', c.montant_reel,
+    'pourcentage_reduction', c.pourcentage_reduction,
     'statut', c.statut,
     'created_at', c.created_at,
     'client', json_build_object(
@@ -204,7 +293,7 @@ BEGIN
   FROM colis c
   JOIN client cl ON c.id_client = cl.id
   JOIN container co ON c.id_container = co.id
-  JOIN cbm ON c.prix_cbm_id = cbm.id
+  LEFT JOIN cbm ON c.prix_cbm_id = cbm.id
   WHERE c.id = p_colis_id;
 
   IF v_result IS NULL THEN
@@ -222,285 +311,8 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =====================================================
--- FUNCTION: create_colis
--- Description: Crée un nouveau colis
--- =====================================================
-CREATE OR REPLACE FUNCTION create_colis(
-  p_auth_uid UUID,
-  p_id_client UUID,
-  p_id_container INTEGER,
-  p_description TEXT,
-  p_nb_pieces INTEGER,
-  p_poids DECIMAL,
-  p_cbm DECIMAL,
-  p_prix_cbm_id INTEGER,
-  p_statut VARCHAR DEFAULT 'non_paye'
-)
-RETURNS JSON AS $$
-DECLARE
-  v_colis_id INTEGER;
-  v_result JSON;
-  v_total_cbm DECIMAL;
-  v_type_conteneur VARCHAR;
-  v_capacite_max DECIMAL;
-BEGIN
-  -- Vérifier que l'utilisateur existe et est actif
-  IF NOT EXISTS (
-    SELECT 1 FROM users 
-    WHERE auth_uid = p_auth_uid AND active = true
-  ) THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'Utilisateur non autorisé'
-    );
-  END IF;
-
-  -- Vérifier que le client existe
-  IF NOT EXISTS (SELECT 1 FROM client WHERE id = p_id_client) THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'Client non trouvé'
-    );
-  END IF;
-
-  -- Vérifier que le conteneur existe et récupérer son type et CBM actuel
-  SELECT type_conteneur, COALESCE(total_cbm, 0) 
-  INTO v_type_conteneur, v_total_cbm
-  FROM container
-  WHERE id = p_id_container;
-
-  IF v_type_conteneur IS NULL THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'Conteneur non trouvé'
-    );
-  END IF;
-
-  -- Déterminer la capacité maximale selon le type de conteneur
-  IF v_type_conteneur = '20pieds' THEN
-    v_capacite_max := 35;
-  ELSIF v_type_conteneur = '40pieds' THEN
-    v_capacite_max := 70;
-  ELSE
-    v_capacite_max := 70; -- Valeur par défaut
-  END IF;
-
-  -- Vérifier que le prix CBM existe
-  IF NOT EXISTS (SELECT 1 FROM cbm WHERE id = p_prix_cbm_id) THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'Prix CBM non trouvé'
-    );
-  END IF;
-
-  -- Vérifier que l'ajout du CBM ne dépasse pas la capacité maximale
-  IF (v_total_cbm + p_cbm) > v_capacite_max THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'La capacité maximale du conteneur (' || v_capacite_max || ' m³) serait dépassée. CBM actuel: ' || v_total_cbm || ' m³, CBM à ajouter: ' || p_cbm || ' m³'
-    );
-  END IF;
-
-  -- Insérer le colis (le trigger calculera automatiquement le montant)
-  INSERT INTO colis (
-    id_client,
-    id_container,
-    description,
-    nb_pieces,
-    poids,
-    cbm,
-    prix_cbm_id,
-    statut
-  ) VALUES (
-    p_id_client,
-    p_id_container,
-    p_description,
-    p_nb_pieces,
-    p_poids,
-    p_cbm,
-    p_prix_cbm_id,
-    p_statut
-  )
-  RETURNING id INTO v_colis_id;
-
-  -- Récupérer le colis créé avec toutes les informations
-  SELECT json_build_object(
-    'id', c.id,
-    'description', c.description,
-    'nb_pieces', c.nb_pieces,
-    'poids', c.poids,
-    'cbm', c.cbm,
-    'montant', c.montant,
-    'statut', c.statut,
-    'created_at', c.created_at,
-    'id_client', c.id_client,
-    'id_container', c.id_container,
-    'prix_cbm_id', c.prix_cbm_id
-  ) INTO v_result
-  FROM colis c
-  WHERE c.id = v_colis_id;
-
-  RETURN json_build_object(
-    'data', v_result,
-    'error', NULL
-  );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- =====================================================
--- FUNCTION: update_colis
--- Description: Met à jour un colis
--- =====================================================
-CREATE OR REPLACE FUNCTION update_colis(
-  p_auth_uid UUID,
-  p_colis_id INTEGER,
-  p_id_client UUID,
-  p_id_container INTEGER,
-  p_description TEXT,
-  p_nb_pieces INTEGER,
-  p_poids DECIMAL,
-  p_cbm DECIMAL,
-  p_prix_cbm_id INTEGER,
-  p_statut VARCHAR
-)
-RETURNS JSON AS $$
-DECLARE
-  v_result JSON;
-  v_total_cbm DECIMAL;
-  v_old_cbm DECIMAL;
-  v_type_conteneur VARCHAR;
-  v_capacite_max DECIMAL;
-BEGIN
-  -- Vérifier que l'utilisateur existe et est actif
-  IF NOT EXISTS (
-    SELECT 1 FROM users 
-    WHERE auth_uid = p_auth_uid AND active = true
-  ) THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'Utilisateur non autorisé'
-    );
-  END IF;
-
-  -- Vérifier que le colis existe
-  IF NOT EXISTS (SELECT 1 FROM colis WHERE id = p_colis_id) THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'Colis non trouvé'
-    );
-  END IF;
-
-  -- Récupérer l'ancien CBM du colis
-  SELECT cbm INTO v_old_cbm FROM colis WHERE id = p_colis_id;
-
-  -- Récupérer le type et le CBM actuel du conteneur
-  SELECT type_conteneur, COALESCE(total_cbm, 0) 
-  INTO v_type_conteneur, v_total_cbm
-  FROM container
-  WHERE id = p_id_container;
-
-  IF v_type_conteneur IS NULL THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'Conteneur non trouvé'
-    );
-  END IF;
-
-  -- Déterminer la capacité maximale selon le type de conteneur
-  IF v_type_conteneur = '20pieds' THEN
-    v_capacite_max := 35;
-  ELSIF v_type_conteneur = '40pieds' THEN
-    v_capacite_max := 70;
-  ELSE
-    v_capacite_max := 70; -- Valeur par défaut
-  END IF;
-
-  -- Vérifier que la modification du CBM ne dépasse pas la capacité maximale
-  IF (v_total_cbm - v_old_cbm + p_cbm) > v_capacite_max THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'La capacité maximale du conteneur (' || v_capacite_max || ' m³) serait dépassée'
-    );
-  END IF;
-
-  -- Mettre à jour le colis
-  UPDATE colis SET
-    id_client = p_id_client,
-    id_container = p_id_container,
-    description = p_description,
-    nb_pieces = p_nb_pieces,
-    poids = p_poids,
-    cbm = p_cbm,
-    prix_cbm_id = p_prix_cbm_id,
-    statut = p_statut
-  WHERE id = p_colis_id;
-
-  -- Récupérer le colis mis à jour
-  SELECT json_build_object(
-    'id', c.id,
-    'description', c.description,
-    'nb_pieces', c.nb_pieces,
-    'poids', c.poids,
-    'cbm', c.cbm,
-    'montant', c.montant,
-    'statut', c.statut,
-    'created_at', c.created_at,
-    'id_client', c.id_client,
-    'id_container', c.id_container,
-    'prix_cbm_id', c.prix_cbm_id
-  ) INTO v_result
-  FROM colis c
-  WHERE c.id = p_colis_id;
-
-  RETURN json_build_object(
-    'data', v_result,
-    'error', NULL
-  );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- =====================================================
--- FUNCTION: delete_colis
--- Description: Supprime un colis
--- =====================================================
-CREATE OR REPLACE FUNCTION delete_colis(
-  p_auth_uid UUID,
-  p_colis_id INTEGER
-)
-RETURNS JSON AS $$
-BEGIN
-  -- Vérifier que l'utilisateur existe et est actif
-  IF NOT EXISTS (
-    SELECT 1 FROM users 
-    WHERE auth_uid = p_auth_uid AND active = true
-  ) THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'Utilisateur non autorisé'
-    );
-  END IF;
-
-  -- Vérifier que le colis existe
-  IF NOT EXISTS (SELECT 1 FROM colis WHERE id = p_colis_id) THEN
-    RETURN json_build_object(
-      'data', NULL,
-      'error', 'Colis non trouvé'
-    );
-  END IF;
-
-  -- Supprimer le colis
-  DELETE FROM colis WHERE id = p_colis_id;
-
-  RETURN json_build_object(
-    'data', json_build_object('success', true),
-    'error', NULL
-  );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- =====================================================
--- FUNCTION: get_colis_by_container
--- Description: Récupère tous les colis d'un conteneur
+-- FUNCTION: get_colis_by_container (MISE À JOUR)
+-- Description: Ajouter montant_reel et pourcentage_reduction
 -- =====================================================
 CREATE OR REPLACE FUNCTION get_colis_by_container(
   p_auth_uid UUID,
@@ -530,6 +342,8 @@ BEGIN
       'poids', c.poids,
       'cbm', c.cbm,
       'montant', c.montant,
+      'montant_reel', c.montant_reel,
+      'pourcentage_reduction', c.pourcentage_reduction,
       'statut', c.statut,
       'created_at', c.created_at,
       'client', json_build_object(
@@ -551,6 +365,136 @@ BEGIN
 
   RETURN json_build_object(
     'data', COALESCE(v_result, '[]'::json),
+    'error', NULL
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =====================================================
+-- FUNCTION: update_colis_details (NOUVELLE)
+-- Description: Mettre à jour les détails d'un colis (CBM, poids, montant_reel)
+-- =====================================================
+CREATE OR REPLACE FUNCTION update_colis_details(
+  p_auth_uid UUID,
+  p_colis_id INTEGER,
+  p_cbm DECIMAL DEFAULT NULL,
+  p_poids DECIMAL DEFAULT NULL,
+  p_montant_reel DECIMAL DEFAULT NULL,
+  p_pourcentage_reduction DECIMAL DEFAULT NULL
+)
+RETURNS JSON AS $$
+DECLARE
+  v_result JSON;
+  v_prix_cbm_id INTEGER;
+BEGIN
+  -- Vérifier que l'utilisateur existe et est actif
+  IF NOT EXISTS (
+    SELECT 1 FROM users 
+    WHERE auth_uid = p_auth_uid AND active = true
+  ) THEN
+    RETURN json_build_object(
+      'data', NULL,
+      'error', 'Utilisateur non autorisé'
+    );
+  END IF;
+
+  -- Vérifier que le colis existe et récupérer son prix_cbm_id
+  SELECT prix_cbm_id INTO v_prix_cbm_id
+  FROM colis
+  WHERE id = p_colis_id;
+
+  IF v_prix_cbm_id IS NULL THEN
+    RETURN json_build_object(
+      'data', NULL,
+      'error', 'Colis non trouvé'
+    );
+  END IF;
+
+  -- Mettre à jour le colis
+  UPDATE colis SET
+    cbm = COALESCE(p_cbm, cbm),
+    poids = COALESCE(p_poids, poids),
+    -- Si montant_reel n'est pas fourni, utiliser le montant calculé
+    montant_reel = COALESCE(p_montant_reel, montant),
+    pourcentage_reduction = p_pourcentage_reduction,
+    -- Si on met à jour le CBM, il faut aussi mettre à jour le prix_cbm_id avec le tarif actuel
+    prix_cbm_id = CASE 
+      WHEN p_cbm IS NOT NULL AND prix_cbm_id IS NULL THEN (
+        SELECT id FROM cbm WHERE is_valid = true LIMIT 1
+      )
+      ELSE prix_cbm_id
+    END
+  WHERE id = p_colis_id;
+
+  -- Récupérer le colis mis à jour
+  SELECT json_build_object(
+    'id', c.id,
+    'description', c.description,
+    'nb_pieces', c.nb_pieces,
+    'poids', c.poids,
+    'cbm', c.cbm,
+    'montant', c.montant,
+    'montant_reel', c.montant_reel,
+    'pourcentage_reduction', c.pourcentage_reduction,
+    'statut', c.statut,
+    'created_at', c.created_at
+  ) INTO v_result
+  FROM colis c
+  WHERE c.id = p_colis_id;
+
+  RETURN json_build_object(
+    'data', v_result,
+    'error', NULL
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =====================================================
+-- FUNCTION: get_container_statistics (NOUVELLE)
+-- Description: Statistiques détaillées d'un conteneur avec montant_reel
+-- =====================================================
+CREATE OR REPLACE FUNCTION get_container_statistics(
+  p_auth_uid UUID,
+  p_container_id INTEGER
+)
+RETURNS JSON AS $$
+DECLARE
+  v_result JSON;
+BEGIN
+  -- Vérifier que l'utilisateur existe et est actif
+  IF NOT EXISTS (
+    SELECT 1 FROM users 
+    WHERE auth_uid = p_auth_uid AND active = true
+  ) THEN
+    RETURN json_build_object(
+      'data', NULL,
+      'error', 'Utilisateur non autorisé'
+    );
+  END IF;
+
+  -- Calculer les statistiques
+  SELECT json_build_object(
+    'total_cbm', COALESCE(SUM(cbm), 0),
+    'total_poids', COALESCE(SUM(poids), 0),
+    'total_montant_calcule', COALESCE(SUM(montant), 0),
+    'total_montant_reel', COALESCE(SUM(COALESCE(montant_reel, montant)), 0),
+    'total_reduction', COALESCE(SUM(montant - COALESCE(montant_reel, montant)), 0),
+    'nb_colis', COUNT(*),
+    'nb_colis_avec_reduction', COUNT(*) FILTER (WHERE montant_reel IS NOT NULL AND montant_reel < montant),
+    'nb_colis_complets', COUNT(*) FILTER (WHERE cbm IS NOT NULL AND poids IS NOT NULL),
+    'nb_colis_incomplets', COUNT(*) FILTER (WHERE cbm IS NULL OR poids IS NULL),
+    'pourcentage_reduction_moyen', 
+      CASE 
+        WHEN SUM(montant) > 0 THEN 
+          ROUND(((SUM(montant) - SUM(COALESCE(montant_reel, montant))) / SUM(montant)) * 100, 2)
+        ELSE 0
+      END
+  ) INTO v_result
+  FROM colis
+  WHERE id_container = p_container_id;
+
+  RETURN json_build_object(
+    'data', v_result,
     'error', NULL
   );
 END;

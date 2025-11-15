@@ -3,6 +3,7 @@ import type {
   Colis,
   CreateColisInput,
   UpdateColisInput,
+  UpdateColisDetailsInput,
   ColisFilters,
 } from "@/types/colis";
 import type { PaginationParams, PaginatedResponse, ApiResponse } from "@/types/common";
@@ -111,9 +112,9 @@ export class ColisService {
         p_id_container: colisData.id_container,
         p_description: colisData.description || null,
         p_nb_pieces: colisData.nb_pieces || 1,
-        p_poids: colisData.poids,
-        p_cbm: colisData.cbm,
-        p_prix_cbm_id: colisData.prix_cbm_id, // Ne pas convertir en null
+        p_poids: colisData.poids || null, // Optionnel
+        p_cbm: colisData.cbm || null, // Optionnel
+        p_prix_cbm_id: colisData.prix_cbm_id || null, // Optionnel
         p_statut: colisData.statut || "non_paye",
       });
 
@@ -176,6 +177,87 @@ export class ColisService {
       }
 
       return { data: null, error: null };
+    } catch (error: any) {
+      return { data: null, error: error.message || "Erreur inconnue" };
+    }
+  }
+
+  /**
+   * Mettre à jour les détails d'un colis (méthode simplifiée sans auth_uid)
+   * Utilise la mise à jour directe de la table pour les champs optionnels
+   */
+  async update(
+    colisData: UpdateColisInput
+  ): Promise<ApiResponse<Colis>> {
+    try {
+      const { data, error } = await supabase
+        .from("colis")
+        .update({
+          cbm: colisData.cbm,
+          poids: colisData.poids,
+          montant: colisData.montant,
+          montant_reel: colisData.montant_reel,
+          pourcentage_reduction: colisData.pourcentage_reduction,
+        })
+        .eq("id", colisData.id)
+        .select()
+        .single();
+
+      if (error) {
+        return { data: null, error: error.message };
+      }
+
+      return { data, error: null };
+    } catch (error: any) {
+      return { data: null, error: error.message || "Erreur inconnue" };
+    }
+  }
+
+  /**
+   * Mettre à jour les détails d'un colis (CBM, poids, montant_reel) via RPC
+   */
+  async updateColisDetails(
+    auth_uid: string,
+    colisData: UpdateColisDetailsInput
+  ): Promise<ApiResponse<Colis>> {
+    try {
+      const { data, error } = await supabase.rpc("update_colis_details", {
+        p_auth_uid: auth_uid,
+        p_colis_id: colisData.id,
+        p_cbm: colisData.cbm || null,
+        p_poids: colisData.poids || null,
+        p_montant_reel: colisData.montant_reel || null,
+        p_pourcentage_reduction: colisData.pourcentage_reduction || null,
+      });
+
+      if (error) {
+        return { data: null, error: error.message };
+      }
+
+      return { data: data?.data || null, error: data?.error || null };
+    } catch (error: any) {
+      return { data: null, error: error.message || "Erreur inconnue" };
+    }
+  }
+
+  /**
+   * Récupérer les statistiques d'un conteneur
+   */
+  async getContainerStatistics(
+    auth_uid: string,
+    container_id: number
+  ): Promise<ApiResponse<any>> {
+    try {
+      const { data, error } = await supabase.rpc("get_container_statistics", {
+        p_auth_uid: auth_uid,
+        p_container_id: container_id,
+      });
+
+      if (error) {
+        return { data: null, error: error.message };
+      }
+
+      return { data: data?.data || null, error: data?.error || null };
     } catch (error: any) {
       return { data: null, error: error.message || "Erreur inconnue" };
     }
