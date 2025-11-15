@@ -266,7 +266,7 @@ function ColisItem({
       </div>
 
       {/* Actions */}
-      {(onEdit || onDelete) && (
+      {(onEdit || onDelete || onCompleteDetails) && (
         <div className="flex gap-2 flex-shrink-0">
           {onEdit && (
             <Button
@@ -274,8 +274,20 @@ function ColisItem({
               variant="ghost"
               onClick={() => onEdit(colis)}
               className="h-8 w-8"
+              title="Modifier le client, description et nb de pièces"
             >
               <Edit className="w-4 h-4" />
+            </Button>
+          )}
+          {onCompleteDetails && !detailsIncomplets && (
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => onCompleteDetails(colis)}
+              className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+              title="Modifier les détails (CBM, poids, montant)"
+            >
+              <FileEdit className="w-4 h-4" />
             </Button>
           )}
           {onDelete && (
@@ -284,6 +296,7 @@ function ColisItem({
               variant="ghost"
               onClick={() => onDelete(colis)}
               className="h-8 w-8 text-destructive hover:text-destructive"
+              title="Supprimer le colis"
             >
               <Trash2 className="w-4 h-4" />
             </Button>
